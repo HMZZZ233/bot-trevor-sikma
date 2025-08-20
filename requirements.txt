@@ -1,0 +1,10 @@
+requests
+beautifulsoup4
+flask
+dnspython
+pyopenssl
+cryptography
+nmap
+scapy
+matplotlib
+pandas
