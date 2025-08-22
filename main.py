@@ -60,7 +60,6 @@ EMO = {
     "dos": "💣",
     "check": "✓",
     "cross": "✗",
-    "warning": "⚠️".
 }
 
 UA = (
@@ -108,8 +107,6 @@ def banner():
 {EMO['shield']}  SQL Injection (sqlmap): Basic · Dump DBs · Crawl · Risk3 · Tor
 {EMO['dos']}  DoS Attack: Customizable for testing your own website
 {EMO['scan']}  Website Scanner: Security · Headers · Files · Vulnerabilities
-{EMO['shield']} Coded by: Hamzah Wisnu Dzaky AKA HMZZZ233!
-{EMO['warning]'} Don't attack random targets, just for security testing.
 {EMO['info']}  After actions, shows your Public IP
 {C['GR']}────────────────────────────────────────────────────────{C['RESET']}
 """
